@@ -1,0 +1,36 @@
+{
+    "compilerOptions": {
+      "target": "ES2022",
+      "module": "ESNext",
+      "moduleResolution": "bundler",
+      "allowSyntheticDefaultImports": true,
+      "esModuleInterop": true,
+      "allowImportingTsExtensions": false,
+      "strict": true,
+      "skipLibCheck": true,
+      "forceConsistentCasingInFileNames": true,
+      "declaration": true,
+      "outDir": "./dist",
+      "rootDir": "./src",
+      "resolveJsonModule": true,
+      "baseUrl": "./src",
+      "paths": {
+        "@/*": ["*"],
+        "@/controllers/*": ["controllers/*"],
+        "@/views/*": ["views/*"],
+        "@/services/*": ["services/*"],
+        "@/models/*": ["models/*"],
+        "@/components/*": ["components/*"],
+        "@/types/*": ["types/*"],
+        "@/utils/*": ["utils/*"],
+        "@/config/*": ["config/*"]
+      }
+    },
+    "include": [
+      "src/**/*"
+    ],
+    "exclude": [
+      "node_modules",
+      "dist"
+    ]
+  }
