@@ -55,8 +55,24 @@ const CLEAN_UP_CONFIG = {
 };
 
 function formatAIMessage(message: AIMessage): string {
-  return `- (${message.timestamp.toISOString()}) ${message.sender}: ${message.content}`;
+  // Fix: Handle invalid timestamps properly
+  let timestamp: string;
+  try {
+    if (message.timestamp instanceof Date) {
+      timestamp = message.timestamp.toISOString();
+    } else {
+      // Handle string timestamps from Slack (which are Unix timestamps as strings)
+      const date = new Date(parseFloat(message.timestamp.toString()) * 1000);
+      timestamp = date.toISOString();
+    }
+  } catch (error) {
+    // Fallback to current time if timestamp is invalid
+    timestamp = new Date().toISOString();
+  }
+  
+  return `- (${timestamp}) ${message.sender}: ${message.content}`;
 }
+
 
 function getUserPrompt(userDescription: string, messageToClassify: AIMessage, previousMessages: AIMessage[]): string {
   return `User Description:
@@ -169,7 +185,8 @@ export class AIBackendService extends BaseService {
     return {
       userDescription: this.buildUserDescription(request.context.user_settings),
       messageToClassify: {
-        timestamp: new Date(request.message.timestamp),
+        // Fix: Handle Slack timestamp format properly
+        timestamp: new Date(parseFloat(request.message.timestamp) * 1000),
         sender: request.message.user_id,
         content: request.message.text
       },
