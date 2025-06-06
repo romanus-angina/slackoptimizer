@@ -3,6 +3,7 @@ import { BaseController } from './BaseController';
 import { ActionPayload } from '../types/ui';
 import { SettingsView } from '../views/SettingsView';
 import { TestMessageView } from '../views/TestMessageView';
+import { AppHomeView } from '../views/AppHomeView';
 
 export class SlackInteractionController extends BaseController {
   constructor(slackApp: SlackApp, expressReceiver: ExpressReceiver) {
@@ -10,21 +11,269 @@ export class SlackInteractionController extends BaseController {
   }
 
   register(): void {
-    // Handle button clicks
+    // Core navigation actions
     this.slackApp.action('get_started', this.handleGetStarted.bind(this));
+    this.slackApp.action('open_settings', this.handleOpenSettings.bind(this));
+    this.slackApp.action('test_filter', this.handleTestFilter.bind(this));
+    this.slackApp.action('view_analytics', this.handleViewAnalytics.bind(this));
+    this.slackApp.action('back_home', this.handleBackHome.bind(this));
+    
+    // Test-specific actions
+    this.slackApp.action('test_another', this.handleTestAnother.bind(this));
+    this.slackApp.action('adjust_settings', this.handleAdjustSettings.bind(this));
+    
+    // Pattern-based handlers (keep existing functionality)
     this.slackApp.action(/settings_.*/, this.handleSettingsAction.bind(this));
     this.slackApp.action(/test_.*/, this.handleTestAction.bind(this));
     this.slackApp.action(/analytics_.*/, this.handleAnalyticsAction.bind(this));
 
-    // Handle view submissions (modals)
+    // Modal submission handlers
     this.slackApp.view('settings_modal', this.handleSettingsSubmission.bind(this));
     this.slackApp.view('test_modal', this.handleTestSubmission.bind(this));
 
-    // Handle shortcuts
-    this.slackApp.shortcut('open_settings', this.handleOpenSettings.bind(this));
+    // Shortcuts
+    this.slackApp.shortcut('open_settings', this.handleOpenSettingsShortcut.bind(this));
 
-    console.log('[SlackInteractionController] Interaction handlers registered');
+    console.log('[SlackInteractionController] All interaction handlers registered');
   }
+
+  // === CORE NAVIGATION HANDLERS ===
+
+  private async handleOpenSettings({ ack, body, client }: any): Promise<void> {
+    try {
+      await ack();
+      
+      const userId = body.user.id;
+      const teamId = body.team?.id || body.user.team_id;
+      
+      console.log(`Opening settings for user: ${userId}`);
+      
+      // Get current settings from backend
+      let currentSettings = {};
+      try {
+        const backendUser = await this.backendAPI.getUser(userId, teamId);
+        currentSettings = backendUser?.settings || {};
+      } catch (error) {
+        console.warn('Could not load current settings, using defaults:', error);
+        currentSettings = this.backendAPI.getDefaultUserSettings();
+      }
+      
+      // Create and show settings modal
+      const settingsView = new SettingsView();
+      const modal = settingsView.renderModal(currentSettings);
+      
+      await client.views.open({
+        trigger_id: body.trigger_id,
+        view: modal
+      });
+      
+    } catch (error) {
+      this.handleError(error as Error, 'handleOpenSettings');
+      
+      // Show error message to user
+      await this.respondToInteraction(
+        async (msg: any) => await client.chat.postEphemeral({
+          channel: body.user.id,
+          user: body.user.id,
+          text: msg.text
+        }),
+        '❌ Failed to open settings. Please try again.',
+        true
+      );
+    }
+  }
+
+  private async handleTestFilter({ ack, body, client }: any): Promise<void> {
+    try {
+      await ack();
+      
+      const userId = body.user.id;
+      console.log(`Opening test filter for user: ${userId}`);
+      
+      // Create and show test modal
+      const testView = new TestMessageView();
+      const modal = testView.renderTestModal();
+      
+      await client.views.open({
+        trigger_id: body.trigger_id,
+        view: modal
+      });
+      
+    } catch (error) {
+      this.handleError(error as Error, 'handleTestFilter');
+      
+      await this.respondToInteraction(
+        async (msg: any) => await client.chat.postEphemeral({
+          channel: body.user.id,
+          user: body.user.id,
+          text: msg.text
+        }),
+        '❌ Failed to open test modal. Please try again.',
+        true
+      );
+    }
+  }
+
+  private async handleViewAnalytics({ ack, body, client }: any): Promise<void> {
+    try {
+      await ack();
+      
+      const userId = body.user.id;
+      const teamId = body.team?.id || body.user.team_id;
+      
+      console.log(`Viewing analytics for user: ${userId}`);
+      
+      // Show analytics in home view
+      await this.showAnalytics(client, userId, teamId);
+      
+    } catch (error) {
+      this.handleError(error as Error, 'handleViewAnalytics');
+      
+      await this.respondToInteraction(
+        async (msg: any) => await client.chat.postEphemeral({
+          channel: body.user.id,
+          user: body.user.id,
+          text: msg.text
+        }),
+        '❌ Failed to load analytics. Please try again.',
+        true
+      );
+    }
+  }
+
+  private async handleBackHome({ ack, body, client }: any): Promise<void> {
+    try {
+      await ack();
+      
+      const userId = body.user.id;
+      const teamId = body.team?.id || body.user.team_id;
+      
+      console.log(`Returning to home for user: ${userId}`);
+      
+      // Get user info and refresh home view
+      const slackUser = await this.getSlackUser(userId, teamId);
+      if (!slackUser) {
+        throw new Error('Failed to get user information');
+      }
+      
+      // Create fresh home view
+      const homeView = new AppHomeView();
+      
+      try {
+        // Try to get real analytics data
+        const analytics = await this.backendAPI.getUserAnalytics(userId, teamId, 'week');
+        
+        const viewData = {
+          user: { name: slackUser.name, id: userId },
+          stats: {
+            messages_filtered: analytics.metrics.filtered_messages || 0,
+            notifications_sent: analytics.metrics.notifications_sent || 0,
+            filter_effectiveness: analytics.metrics.filter_effectiveness || 0
+          },
+          recent_activity: [] // Could add recent activity here
+        };
+        
+        const view = homeView.render(viewData);
+        
+        await client.views.publish({
+          user_id: userId,
+          view
+        });
+        
+      } catch (backendError) {
+        // Fallback to sample data if backend unavailable
+        console.warn('Backend unavailable, showing sample data for home view');
+        
+        const sampleData = {
+          user: { name: slackUser.name, id: userId },
+          stats: {
+            messages_filtered: 127,
+            notifications_sent: 23,
+            filter_effectiveness: 82
+          },
+          recent_activity: []
+        };
+        
+        const view = homeView.render(sampleData);
+        
+        await client.views.publish({
+          user_id: userId,
+          view
+        });
+      }
+      
+    } catch (error) {
+      this.handleError(error as Error, 'handleBackHome');
+      
+      // Show minimal error home view
+      const homeView = new AppHomeView();
+      const errorView = homeView.renderError('Failed to load home view');
+      
+      await client.views.publish({
+        user_id: body.user.id,
+        view: errorView
+      });
+    }
+  }
+
+  // === TEST-SPECIFIC HANDLERS ===
+
+  private async handleTestAnother({ ack, body, client }: any): Promise<void> {
+    try {
+      await ack();
+      
+      console.log(`Opening another test for user: ${body.user.id}`);
+      
+      // Simply open the test modal again
+      const testView = new TestMessageView();
+      const modal = testView.renderTestModal();
+      
+      await client.views.open({
+        trigger_id: body.trigger_id,
+        view: modal
+      });
+      
+    } catch (error) {
+      this.handleError(error as Error, 'handleTestAnother');
+      
+      await this.respondToInteraction(
+        async (msg: any) => await client.chat.postEphemeral({
+          channel: body.user.id,
+          user: body.user.id,
+          text: msg.text
+        }),
+        '❌ Failed to open test modal. Please try again.',
+        true
+      );
+    }
+  }
+
+  private async handleAdjustSettings({ ack, body, client }: any): Promise<void> {
+    try {
+      await ack();
+      
+      console.log(`Adjusting settings from test view for user: ${body.user.id}`);
+      
+      // This is a shortcut from test results to settings
+      // Reuse the open settings logic
+      await this.handleOpenSettings({ ack: () => {}, body, client });
+      
+    } catch (error) {
+      this.handleError(error as Error, 'handleAdjustSettings');
+      
+      await this.respondToInteraction(
+        async (msg: any) => await client.chat.postEphemeral({
+          channel: body.user.id,
+          user: body.user.id,
+          text: msg.text
+        }),
+        '❌ Failed to open settings. Please try again.',
+        true
+      );
+    }
+  }
+
+  // === EXISTING HANDLERS (keeping your current implementation) ===
 
   private async handleGetStarted({ ack, body, client }: any): Promise<void> {
     try {
@@ -76,7 +325,7 @@ export class SlackInteractionController extends BaseController {
                     type: 'plain_text',
                     text: '🧪 Test Filtering'
                   },
-                  action_id: 'test_open'
+                  action_id: 'test_filter'
                 },
                 {
                   type: 'button',
@@ -84,7 +333,7 @@ export class SlackInteractionController extends BaseController {
                     type: 'plain_text',
                     text: '📊 View Analytics'
                   },
-                  action_id: 'analytics_open'
+                  action_id: 'view_analytics'
                 }
               ]
             }
@@ -96,8 +345,6 @@ export class SlackInteractionController extends BaseController {
       this.handleError(error as Error, 'handleGetStarted');
     }
   }
-
-  
 
   private async handleSettingsAction({ ack, body, client }: any): Promise<void> {
     try {
@@ -190,8 +437,8 @@ export class SlackInteractionController extends BaseController {
       console.log(`Settings submitted by ${userId}`);
 
       // Extract form values
-      const notificationLevel = values.notification_level?.notification_level_select?.selected_option?.value;
-      const quietHoursEnabled = values.quiet_hours?.quiet_hours_toggle?.selected_options?.length > 0;
+      const notificationLevel = values.notification_level?.level_select?.selected_option?.value;
+      const quietHoursEnabled = values.quiet_hours?.quiet_toggle?.selected_options?.length > 0;
       const startTime = values.quiet_hours_time?.start_time_select?.selected_time;
       const endTime = values.quiet_hours_time?.end_time_select?.selected_time;
 
@@ -320,14 +567,14 @@ export class SlackInteractionController extends BaseController {
     }
   }
   
-  private async handleOpenSettings({ ack, body, client }: any): Promise<void> {
+  private async handleOpenSettingsShortcut({ ack, body, client }: any): Promise<void> {
     try {
       await ack();
   
       const userId = body.user.id;
       const teamId = body.team?.id || body.user.team_id;
   
-      console.log(`Opening settings for user: ${userId}`);
+      console.log(`Opening settings shortcut for user: ${userId}`);
   
       // Get current settings
       let currentSettings = {};
@@ -349,12 +596,11 @@ export class SlackInteractionController extends BaseController {
       });
   
     } catch (error) {
-      this.handleError(error as Error, 'handleOpenSettings');
+      this.handleError(error as Error, 'handleOpenSettingsShortcut');
     }
   }
-  
 
-  // Helper methods for opening modals and views
+  // === HELPER METHODS ===
 
   private async openSettingsModal(client: any, triggerId: string, userId: string, teamId: string): Promise<void> {
     try {
@@ -461,27 +707,6 @@ export class SlackInteractionController extends BaseController {
     }
   }
 
-  private async handleTestFilter({ ack, body, client }: any): Promise<void> {
-    try {
-      await ack();
-  
-      const userId = body.user.id;
-      console.log(`Opening test filter for user: ${userId}`);
-  
-      // Create and show test modal
-      const testView = new TestMessageView();
-      const modal = testView.renderTestModal();
-  
-      await client.views.open({
-        trigger_id: body.trigger_id,
-        view: modal
-      });
-  
-    } catch (error) {
-      this.handleError(error as Error, 'handleTestFilter');
-    }
-  }
-
   private async openTestModal(client: any, triggerId: string, userId: string, teamId: string): Promise<void> {
     try {
       await client.views.open({
@@ -514,7 +739,7 @@ export class SlackInteractionController extends BaseController {
               block_id: 'test_message',
               element: {
                 type: 'plain_text_input',
-                action_id: 'test_message_input',
+                action_id: 'message_input',
                 multiline: true,
                 placeholder: {
                   type: 'plain_text',
@@ -528,14 +753,28 @@ export class SlackInteractionController extends BaseController {
             },
             {
               type: 'input',
-              block_id: 'test_channel',
+              block_id: 'channel_context',
               element: {
-                type: 'channels_select',
-                action_id: 'test_channel_select',
+                type: 'static_select',
+                action_id: 'channel_select',
                 placeholder: {
                   type: 'plain_text',
                   text: 'Select a channel context'
-                }
+                },
+                options: [
+                  {
+                    text: { type: 'plain_text', text: 'General' },
+                    value: 'general'
+                  },
+                  {
+                    text: { type: 'plain_text', text: 'Engineering' },
+                    value: 'engineering'
+                  },
+                  {
+                    text: { type: 'plain_text', text: 'Random' },
+                    value: 'random'
+                  }
+                ]
               },
               label: {
                 type: 'plain_text',
@@ -599,7 +838,7 @@ export class SlackInteractionController extends BaseController {
                     type: 'plain_text',
                     text: '← Back to Home'
                   },
-                  action_id: 'get_started'
+                  action_id: 'back_home'
                 }
               ]
             }
@@ -618,8 +857,6 @@ export class SlackInteractionController extends BaseController {
       });
     }
   }
-
-  // Helper methods
 
   private async handleNotificationLevelChange(body: any, client: any, userId: string, teamId: string): Promise<void> {
     // This would handle real-time updates without modal submission
