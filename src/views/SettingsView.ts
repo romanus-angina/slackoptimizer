@@ -3,265 +3,355 @@ import { BlockKitView } from '../types/ui';
 
 export class SettingsView extends BaseView {
   
-  // Main settings modal
-  renderModal(settings: {
-    notification_level?: string;
-    quiet_hours?: { enabled: boolean; start_time: string; end_time: string };
-    keywords?: string[];
-  } = {}): any {
-    const notificationLevel = settings.notification_level || 'mentions';
-    const quietHours = settings.quiet_hours || { enabled: false, start_time: '22:00', end_time: '08:00' };
-    
-    return {
-      type: 'modal',
-      callback_id: 'settings_modal',
-      title: {
-        type: 'plain_text',
-        text: 'Notification Settings'
-      },
-      submit: {
-        type: 'plain_text',
-        text: 'Save'
-      },
-      close: {
-        type: 'plain_text',
-        text: 'Cancel'
-      },
-      blocks: [
-        {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: '*Configure your AI-powered notification preferences*'
-          }
+    renderModal(currentSettings?: {
+      notification_level?: string;
+      quiet_hours?: { enabled: boolean; start_time: string; end_time: string };
+      keywords?: string[];
+      delivery_preferences?: {
+        urgent_via_dm: boolean;
+        important_via_dm: boolean;
+        mentions_via_dm: boolean;
+        feed_enabled: boolean;
+      };
+    }): any {
+      
+      const settings = currentSettings || {};
+      const delivery = settings.delivery_preferences || {
+        urgent_via_dm: true,
+        important_via_dm: true, 
+        mentions_via_dm: false,
+        feed_enabled: true
+      };
+      
+      return {
+        type: 'modal',
+        callback_id: 'settings_modal',
+        title: {
+          type: 'plain_text',
+          text: 'Smart Notification Settings'
         },
-        
-        {
-          type: 'divider'
+        submit: {
+          type: 'plain_text',
+          text: 'Save Settings'
         },
-        
-        // Notification Level - the key setting for demo
-        {
-          type: 'input',
-          block_id: 'notification_level',
-          element: {
-            type: 'static_select',
-            action_id: 'level_select',
-            placeholder: {
-              type: 'plain_text',
-              text: 'Choose notification level'
-            },
-            initial_option: {
-              text: {
+        close: {
+          type: 'plain_text',
+          text: 'Cancel'
+        },
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: '*Configure your AI-powered notification preferences*'
+            }
+          },
+          
+          {
+            type: 'divider'
+          },
+          
+          // Notification Level (existing)
+          {
+            type: 'input',
+            block_id: 'notification_level',
+            element: {
+              type: 'static_select',
+              action_id: 'level_select',
+              placeholder: {
                 type: 'plain_text',
-                text: this.getLevelText(notificationLevel)
+                text: 'Choose notification level'
               },
-              value: notificationLevel
+              initial_option: {
+                text: {
+                  type: 'plain_text',
+                  text: this.getLevelText(settings.notification_level || 'mentions')
+                },
+                value: settings.notification_level || 'mentions'
+              },
+              options: [
+                {
+                  text: { type: 'plain_text', text: '🔊 All Messages' },
+                  value: 'all'
+                },
+                {
+                  text: { type: 'plain_text', text: '📢 Mentions Only' },
+                  value: 'mentions'
+                },
+                {
+                  text: { type: 'plain_text', text: '🎯 Important Only' },
+                  value: 'important'
+                },
+                {
+                  text: { type: 'plain_text', text: '🔇 None' },
+                  value: 'none'
+                }
+              ]
             },
-            options: [
+            label: {
+              type: 'plain_text',
+              text: 'Notification Level'
+            }
+          },
+  
+          // NEW: Delivery Method Configuration
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: '*📬 How do you want to receive notifications?*'
+            }
+          },
+  
+          {
+            type: 'input',
+            block_id: 'dm_delivery',
+            element: {
+              type: 'checkboxes',
+              action_id: 'dm_options',
+              initial_options: this.buildDMCheckboxes(delivery),
+              options: [
+                {
+                  text: { type: 'plain_text', text: '🚨 Send urgent messages as DMs (immediate notification)' },
+                  value: 'urgent_via_dm'
+                },
+                {
+                  text: { type: 'plain_text', text: '⚠️ Send important messages as DMs' },
+                  value: 'important_via_dm'
+                },
+                {
+                  text: { type: 'plain_text', text: '📢 Send mentions as DMs' },
+                  value: 'mentions_via_dm'
+                }
+              ]
+            },
+            label: {
+              type: 'plain_text',
+              text: 'Direct Message Notifications'
+            },
+            hint: {
+              type: 'plain_text',
+              text: 'These will appear as immediate Slack notifications from our bot'
+            },
+            optional: true
+          },
+  
+          {
+            type: 'input',
+            block_id: 'feed_delivery',
+            element: {
+              type: 'checkboxes',
+              action_id: 'feed_options',
+              initial_options: delivery.feed_enabled ? [
+                { text: { type: 'plain_text', text: 'Enable smart notification feed' }, value: 'feed_enabled' }
+              ] : [],
+              options: [
+                {
+                  text: { type: 'plain_text', text: '📱 Enable smart notification feed in app' },
+                  value: 'feed_enabled'
+                }
+              ]
+            },
+            label: {
+              type: 'plain_text',
+              text: 'In-App Feed'
+            },
+            hint: {
+              type: 'plain_text',
+              text: 'View all filtered messages in your app dashboard'
+            },
+            optional: true
+          },
+  
+          {
+            type: 'divider'
+          },
+  
+          // Keywords (existing)
+          {
+            type: 'input',
+            block_id: 'keywords',
+            element: {
+              type: 'plain_text_input',
+              action_id: 'keywords_input',
+              placeholder: {
+                type: 'plain_text',
+                text: 'urgent, meeting, deadline, help'
+              },
+              initial_value: (settings.keywords || []).join(', '),
+              multiline: false
+            },
+            label: {
+              type: 'plain_text',
+              text: 'Important Keywords'
+            },
+            optional: true
+          },
+  
+          // Quiet Hours (existing)
+          {
+            type: 'input',
+            block_id: 'quiet_hours',
+            element: {
+              type: 'checkboxes',
+              action_id: 'quiet_toggle',
+              initial_options: (settings.quiet_hours?.enabled) ? [{
+                text: { type: 'plain_text', text: 'Enable quiet hours (22:00 - 08:00)' },
+                value: 'enabled'
+              }] : [],
+              options: [{
+                text: { type: 'plain_text', text: 'Enable quiet hours (affects DMs only)' },
+                value: 'enabled'
+              }]
+            },
+            label: {
+              type: 'plain_text',
+              text: 'Quiet Hours'
+            },
+            hint: {
+              type: 'plain_text',
+              text: 'Suppress DM notifications during these hours (feed still updates)'
+            },
+            optional: true
+          },
+  
+          {
+            type: 'divider'
+          },
+  
+          // Preset buttons with delivery examples
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: '*⚡ Quick Presets*'
+            }
+          },
+  
+          {
+            type: 'actions',
+            elements: [
               {
+                type: 'button',
                 text: {
                   type: 'plain_text',
-                  text: '🔊 All Messages - Get notified for everything'
+                  text: '💼 Work Mode'
                 },
-                value: 'all'
+                action_id: 'preset_work',
+                value: 'work'
               },
               {
+                type: 'button',
                 text: {
                   type: 'plain_text',
-                  text: '📢 Mentions Only - Only when mentioned or in DMs'
+                  text: '🏠 Personal Mode'
                 },
-                value: 'mentions'
+                action_id: 'preset_personal',
+                value: 'personal'
               },
               {
+                type: 'button',
                 text: {
                   type: 'plain_text',
-                  text: '🎯 Important Only - AI decides what\'s important'
+                  text: '🎯 Focus Mode'
                 },
-                value: 'important'
-              },
-              {
-                text: {
-                  type: 'plain_text',
-                  text: '🔇 None - Disable all notifications'
-                },
-                value: 'none'
+                action_id: 'preset_focus',
+                value: 'focus'
               }
             ]
-          },
-          label: {
-            type: 'plain_text',
-            text: 'Notification Level'
-          },
-          hint: {
-            type: 'plain_text',
-            text: 'This controls how selective the AI filter will be'
           }
-        },
-        
-        // Keywords - simple but effective for demo
-        {
-          type: 'input',
-          block_id: 'keywords',
-          element: {
-            type: 'plain_text_input',
-            action_id: 'keywords_input',
-            placeholder: {
-              type: 'plain_text',
-              text: 'urgent, meeting, deadline, help'
-            },
-            initial_value: (settings.keywords || []).join(', '),
-            multiline: false
-          },
-          label: {
-            type: 'plain_text',
-            text: 'Important Keywords'
-          },
-          hint: {
-            type: 'plain_text',
-            text: 'Comma-separated words that should always notify you'
-          },
-          optional: true
-        },
-        
-        // Quiet Hours - simple toggle for demo
-        {
-          type: 'input',
-          block_id: 'quiet_hours',
-          element: {
-            type: 'checkboxes',
-            action_id: 'quiet_toggle',
-            initial_options: quietHours.enabled ? [{
-              text: { type: 'plain_text', text: 'Enable quiet hours' },
-              value: 'enabled'
-            }] : [],
-            options: [{
-              text: { type: 'plain_text', text: 'Enable quiet hours (22:00 - 08:00)' },
-              value: 'enabled'
-            }]
-          },
-          label: {
-            type: 'plain_text',
-            text: 'Quiet Hours'
-          },
-          hint: {
-            type: 'plain_text',
-            text: 'Suppress non-urgent notifications during these hours'
-          },
-          optional: true
-        },
-        
-        {
-          type: 'divider'
-        },
-        
-        // Quick preset buttons for demo wow factor
-        {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: '*⚡ Quick Presets*'
-          }
-        },
-        
-        {
-          type: 'actions',
-          elements: [
-            {
-              type: 'button',
-              text: {
-                type: 'plain_text',
-                text: '💼 Work Mode'
-              },
-              action_id: 'preset_work',
-              value: 'work'
-            },
-            {
-              type: 'button',
-              text: {
-                type: 'plain_text',
-                text: '🏠 Personal Mode'
-              },
-              action_id: 'preset_personal',
-              value: 'personal'
-            },
-            {
-              type: 'button',
-              text: {
-                type: 'plain_text',
-                text: '🎯 Focus Mode'
-              },
-              action_id: 'preset_focus',
-              value: 'focus'
-            }
-          ]
-        }
-      ]
-    };
-  }
+        ]
+      };
+    }
   
-  // Helper method for display text
-  private getLevelText(level: string): string {
-    const levels: { [key: string]: string } = {
-      'all': '🔊 All Messages',
-      'mentions': '📢 Mentions Only',
-      'important': '🎯 Important Only',
-      'none': '🔇 None'
-    };
-    return levels[level] || '📢 Mentions Only';
-  }
+    // Helper to build DM checkbox initial state
+    private buildDMCheckboxes(delivery: any): any[] {
+      const options = [];
+      
+      if (delivery.urgent_via_dm) {
+        options.push({ text: { type: 'plain_text', text: '🚨 Send urgent messages as DMs' }, value: 'urgent_via_dm' });
+      }
+      if (delivery.important_via_dm) {
+        options.push({ text: { type: 'plain_text', text: '⚠️ Send important messages as DMs' }, value: 'important_via_dm' });
+      }
+      if (delivery.mentions_via_dm) {
+        options.push({ text: { type: 'plain_text', text: '📢 Send mentions as DMs' }, value: 'mentions_via_dm' });
+      }
+      
+      return options;
+    }
   
-  // Settings success view - for after saving
-  renderSuccess(): any {
-    return {
-      type: 'home',
-      blocks: [
-        {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: '✅ *Settings Updated Successfully!*\n\nYour smart notification preferences have been saved and the AI filter is now using your new settings.'
-          }
+    // Helper for preset configurations
+    static getPresetConfig(preset: string): any {
+      type PresetConfig = {
+        notification_level: string;
+        delivery_preferences: {
+          urgent_via_dm: boolean;
+          important_via_dm: boolean;
+          mentions_via_dm: boolean;
+          feed_enabled: boolean;
+        };
+        quiet_hours: {
+          enabled: boolean;
+          start_time?: string;
+          end_time?: string;
+        };
+      };
+
+      type Presets = {
+        work: PresetConfig;
+        personal: PresetConfig;
+        focus: PresetConfig;
+        [key: string]: PresetConfig;
+      };
+
+      const presets: Presets = {
+        work: {
+          notification_level: 'important',
+          delivery_preferences: {
+            urgent_via_dm: true,
+            important_via_dm: true,
+            mentions_via_dm: false,
+            feed_enabled: true
+          },
+          quiet_hours: { enabled: true, start_time: '18:00', end_time: '09:00' }
         },
-        {
-          type: 'actions',
-          elements: [
-            {
-              type: 'button',
-              text: {
-                type: 'plain_text',
-                text: '🏠 Back to Home'
-              },
-              action_id: 'back_to_home',
-              style: 'primary'
-            },
-            {
-              type: 'button',
-              text: {
-                type: 'plain_text',
-                text: '🧪 Test Your Settings'
-              },
-              action_id: 'test_settings'
-            }
-          ]
+        personal: {
+          notification_level: 'mentions',
+          delivery_preferences: {
+            urgent_via_dm: true,
+            important_via_dm: false,
+            mentions_via_dm: true,
+            feed_enabled: true
+          },
+          quiet_hours: { enabled: true, start_time: '22:00', end_time: '08:00' }
+        },
+        focus: {
+          notification_level: 'none',
+          delivery_preferences: {
+            urgent_via_dm: true,
+            important_via_dm: false,
+            mentions_via_dm: false,
+            feed_enabled: true
+          },
+          quiet_hours: { enabled: false }
         }
-      ]
-    };
-  }
+      };
+      
+      return presets[preset] || presets.work;
+    }
   
-  // Not implemented yet placeholder
-  render(): BlockKitView {
-    return {
-      type: 'home',
-      blocks: [
-        {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: 'Settings view - use renderModal() instead'
-          }
-        }
-      ]
-    };
+    private getLevelText(level: string): string {
+      const levels: { [key: string]: string } = {
+        'all': '🔊 All Messages',
+        'mentions': '📢 Mentions Only',
+        'important': '🎯 Important Only',
+        'none': '🔇 None'
+      };
+      return levels[level] || '📢 Mentions Only';
+    }
+  
+    render(): any {
+      return { type: 'home', blocks: [] };
+    }
   }
-}

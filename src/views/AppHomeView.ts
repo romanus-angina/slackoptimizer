@@ -9,6 +9,8 @@ export class AppHomeView extends BaseView {
       messages_filtered: number;
       notifications_sent: number;
       filter_effectiveness: number;
+      feed_updates?: number;
+      dms_sent?: number;
     };
     recent_activity?: any[];
   }): BlockKitView {
@@ -51,26 +53,26 @@ export class AppHomeView extends BaseView {
         },
         
         {
-          type: 'section',
-          fields: [
-            {
-              type: 'mrkdwn',
-              text: `*Messages Analyzed:*\n${stats.messages_filtered + stats.notifications_sent}`
-            },
-            {
-              type: 'mrkdwn',
-              text: `*Notifications Sent:*\n${stats.notifications_sent}`
-            },
-            {
-              type: 'mrkdwn',
-              text: `*Messages Filtered:*\n${stats.messages_filtered}`
-            },
-            {
-              type: 'mrkdwn',
-              text: `*Filter Effectiveness:*\n${stats.filter_effectiveness}%`
-            }
-          ]
-        },
+            type: 'section',
+            fields: [
+              {
+                type: 'mrkdwn',
+                text: `*Messages Analyzed:*\n${stats.messages_filtered + stats.notifications_sent}`
+              },
+              {
+                type: 'mrkdwn',
+                text: `*Smart DMs Sent:*\n${stats.dms_sent || 0}`
+              },
+              {
+                type: 'mrkdwn',
+                text: `*Feed Updates:*\n${stats.feed_updates || stats.notifications_sent}`
+              },
+              {
+                type: 'mrkdwn',
+                text: `*Filter Effectiveness:*\n${stats.filter_effectiveness}%`
+              }
+            ]
+          },
         
         {
           type: 'divider'
