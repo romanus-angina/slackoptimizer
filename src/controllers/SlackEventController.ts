@@ -2,10 +2,14 @@ import { App as SlackApp, ExpressReceiver } from '@slack/bolt';
 import { BaseController } from './BaseController';
 import { ClassificationRequest } from '../types/backend';
 import { SlackMessage, SlackEvent } from '../types/slack';
+import { BackendAPIService } from '../services/BackEndAPIService'; 
 
 export class SlackEventController extends BaseController {
+  protected backendAPI: BackendAPIService;
+
   constructor(slackApp: SlackApp, expressReceiver: ExpressReceiver) {
     super(slackApp, expressReceiver);
+    this.backendAPI = new BackendAPIService(); 
   }
 
   register(): void {
@@ -178,28 +182,301 @@ export class SlackEventController extends BaseController {
   private async handleNotification(
     user: any, 
     message: any, 
-    channel: any, 
-    classification: any
+    channelInfo: any, 
+    classificationResult: any
   ): Promise<void> {
     try {
-      // For now, we'll just log notifications
-      // Later we'll implement actual notification delivery
-      console.log(`[NOTIFICATION] User ${user.id} should be notified about message in ${channel.name}:`, {
-        category: classification.category,
-        priority: classification.priority,
-        confidence: classification.confidence,
-        reasoning: classification.reasoning
+      console.log(`Processing notification for user ${user.id}`);
+  
+      const userSettings = user.settings || {};
+      const delivery = userSettings.delivery_preferences || this.getDefaultDeliveryPreferences();
+  
+      // Store in feed if enabled (always store first)
+      if (delivery.feed_enabled) {
+        await this.storeInNotificationFeed(user, message, channelInfo, classificationResult);
+      }
+  
+      // Decide if we should send a DM
+      const shouldSendDM = this.shouldSendDM(classificationResult, delivery, user);
+      
+      if (shouldSendDM) {
+        await this.sendSmartDM(user, message, channelInfo, classificationResult);
+      }
+  
+      // Track the notification
+      await this.trackNotificationSent(user, message, classificationResult, shouldSendDM);
+  
+    } catch (error) {
+      console.error('Failed to handle notification:', error);
+    }
+  }
+  
+  private shouldSendDM(
+    result: any, 
+    delivery: any, 
+    user: any
+  ): boolean {
+    // Check quiet hours first
+    if (this.isInQuietHours(user, result)) {
+      console.log('In quiet hours, skipping DM');
+      return false;
+    }
+  
+    // Check delivery preferences based on classification
+    switch (result.category) {
+      case 'urgent':
+        return delivery.urgent_via_dm;
+      
+      case 'important':
+        return delivery.important_via_dm;
+      
+      case 'mention':
+        return delivery.mentions_via_dm;
+      
+      default:
+        // For other categories, only send if it's high priority and urgent DMs are enabled
+        return result.priority === 'high' && delivery.urgent_via_dm;
+    }
+  }
+
+  private async sendSmartDM(
+    user: any, 
+    message: any, 
+    channelInfo: any, 
+    result: any
+  ): Promise<void> {
+    try {
+      const notificationBlocks = this.buildSmartDMBlocks(message, channelInfo, result);
+  
+      await this.slackApp.client.chat.postMessage({
+        channel: user.id, // Send as DM
+        text: `🧠 Smart notification from #${channelInfo.name}`,
+        blocks: notificationBlocks,
+        unfurl_links: false,
+        unfurl_media: false
+      });
+  
+      console.log(`Smart DM sent to ${user.id}`);
+  
+    } catch (error) {
+      console.error('Failed to send smart DM:', error);
+      throw error;
+    }
+  }
+  
+  private buildSmartDMBlocks(message: any, channelInfo: any, result: any): any[] {
+    const priorityEmoji = result.priority === 'high' ? '🚨' : 
+                         result.priority === 'medium' ? '⚠️' : '💬';
+    
+    return [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `${priorityEmoji} *Smart Notification from #${channelInfo.name}*\n` +
+                `_${result.category.toUpperCase()} • ${result.confidence}% confidence_`
+        }
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `> ${this.truncateText(message.text, 200)}`
+        }
+      },
+      {
+        type: 'context',
+        elements: [
+          {
+            type: 'mrkdwn',
+            text: `💡 *Why this is important:* ${result.reasoning}`
+          }
+        ]
+      },
+      {
+        type: 'actions',
+        elements: [
+          {
+            type: 'button',
+            text: {
+              type: 'plain_text',
+              text: '👀 View in Channel'
+            },
+            url: `https://slack.com/app_redirect?channel=${message.channel}&message_ts=${message.ts}`
+          },
+          {
+            type: 'button',
+            text: {
+              type: 'plain_text',
+              text: '📱 View in App'
+            },
+            action_id: 'open_app_home'
+          },
+          {
+            type: 'button',
+            text: {
+              type: 'plain_text',
+              text: '✅ Got it'
+            },
+            action_id: 'acknowledge_notification',
+            value: message.ts
+          }
+        ]
+      },
+      {
+        type: 'context',
+        elements: [
+          {
+            type: 'mrkdwn',
+            text: '⚙️ Adjust your notification preferences anytime in the app settings'
+          }
+        ]
+      }
+    ];
+  }
+  
+  private async storeInNotificationFeed(
+    user: any, 
+    message: any, 
+    channelInfo: any, 
+    result: any
+  ): Promise<void> {
+    try {
+      // For hackathon demo - use a simple HTTP client instead of the full backend service
+      const response = await fetch(`${process.env.BACKEND_API_URL}/notifications/feed`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.BACKEND_API_KEY}`
+        },
+        body: JSON.stringify({
+          user_id: user.id,
+          team_id: user.team_id,
+          message_data: {
+            text: message.text,
+            channel: message.channel,
+            channel_name: channelInfo.name,
+            timestamp: message.ts,
+            user: message.user,
+            thread_ts: message.thread_ts
+          },
+          classification: {
+            category: result.category,
+            confidence: result.confidence,
+            reasoning: result.reasoning,
+            priority: result.priority
+          },
+          created_at: new Date().toISOString()
+        })
+      });
+  
+      if (response.ok) {
+        console.log(`Notification stored in feed for user ${user.id}`);
+      } else {
+        console.warn(`Failed to store notification: ${response.status}`);
+      }
+  
+    } catch (error) {
+      console.error('Failed to store in notification feed:', error);
+      // Don't throw - this shouldn't break the main flow
+    }
+  }
+  
+  private getDefaultDeliveryPreferences(): any {
+    return {
+      urgent_via_dm: true,
+      important_via_dm: true,
+      mentions_via_dm: false,
+      feed_enabled: true
+    };
+  }
+  
+  private async trackNotificationSent(
+    user: any, 
+    message: any, 
+    result: any, 
+    sentDM: boolean
+  ): Promise<void> {
+    try {
+      // For hackathon demo - simple tracking
+      const response = await fetch(`${process.env.BACKEND_API_URL}/analytics/notification-processed`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.BACKEND_API_KEY}`
+        },
+        body: JSON.stringify({
+          user_id: user.id,
+          team_id: user.team_id,
+          message_id: message.ts,
+          channel_id: message.channel,
+          category: result.category,
+          confidence: result.confidence,
+          priority: result.priority,
+          sent_dm: sentDM,
+          stored_in_feed: true,
+          processed_at: new Date().toISOString()
+        })
       });
 
-      // TODO: Implement actual notification logic
-      // This could involve:
-      // - Sending push notifications
-      // - Adding to a notification queue
-      // - Updating user's notification feed
-      // - Sending email notifications (if configured)
-
+      if (response.ok) {
+        console.log(`Notification tracked for user ${user.id}`);
+      }
     } catch (error) {
-      this.handleError(error as Error, 'handleNotification');
+      console.error('Failed to track notification:', error);
+    }
+  }
+  
+  private truncateText(text: string, maxLength: number): string {
+    if (text.length <= maxLength) return text;
+    return text.substring(0, maxLength - 3) + '...';
+  }
+
+  private isInQuietHours(user: any, result: any): boolean {
+    const settings = user.settings?.quiet_hours;
+    if (!settings?.enabled) return false;
+    
+    // Always allow urgent messages
+    if (result.category === 'urgent') return false;
+
+    const now = new Date();
+    const start = new Date();
+    const end = new Date();
+    
+    const [startHour, startMin] = (settings.start_time || '22:00').split(':').map(Number);
+    const [endHour, endMin] = (settings.end_time || '08:00').split(':').map(Number);
+    
+    start.setHours(startHour, startMin, 0);
+    end.setHours(endHour, endMin, 0);
+    
+    return now >= start || now < end;
+  }
+
+  // Add these helper methods that were referenced from BaseController
+  protected async ensureUserExists(slackUser: any): Promise<void> {
+    try {
+      const existingUser = await this.backendAPI.getUser(slackUser.id, slackUser.team_id);
+      
+      if (!existingUser) {
+        console.log(`Creating new user in backend: ${slackUser.id}`);
+        await this.backendAPI.createUser({
+          slack_user_id: slackUser.id,
+          team_id: slackUser.team_id,
+          email: slackUser.email || `${slackUser.id}@slack.local`
+        });
+      }
+    } catch (error) {
+      console.error(`Failed to ensure user exists: ${slackUser.id}`, error);
+      // Don't throw for hackathon - just log the error
+    }
+  }
+
+  protected async isBackendHealthy(): Promise<boolean> {
+    try {
+      return await this.backendAPI.isBackendAvailable();
+    } catch (error) {
+      console.warn('Backend health check failed:', error);
+      return false;
     }
   }
 

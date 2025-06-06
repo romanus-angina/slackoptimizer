@@ -215,6 +215,12 @@ export class BackendAPIService extends BaseService {
         spam_detection: true,
         duplicate_detection: true,
         importance_threshold: 50
+      },
+      delivery_preferences: {
+        urgent_via_dm: true,
+        important_via_dm: true,
+        mentions_via_dm: false,
+        feed_enabled: true
       }
     };
   }

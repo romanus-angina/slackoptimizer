@@ -28,6 +28,12 @@ export interface BackendUser {
       duplicate_detection: boolean;
       importance_threshold: number; // 0-100
     };
+    delivery_preferences: {
+        urgent_via_dm: boolean;
+        important_via_dm: boolean;
+        mentions_via_dm: boolean;
+        feed_enabled: boolean;
+      };
   }
   
   export interface ClassificationRequest {
