@@ -36,7 +36,7 @@ export const slackConfig = {
     commands: '/slack/commands'
   },
   
-  // App URLs
+  // OAuth configuration - full URL for redirect
   redirectUri: process.env.SLACK_REDIRECT_URI || 'http://localhost:3000/slack/oauth/callback',
   
   // Event subscriptions

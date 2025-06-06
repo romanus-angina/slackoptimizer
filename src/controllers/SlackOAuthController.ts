@@ -201,7 +201,7 @@ export class SlackOAuthController extends BaseController {
     const params = new URLSearchParams({
       client_id: slackConfig.clientId,
       scope: slackConfig.scopes.join(','),
-      redirect_uri: slackConfig.redirectUri,
+      redirect_uri: slackConfig.redirectUri, // Use the full redirect URI
       response_type: 'code'
     });
 
