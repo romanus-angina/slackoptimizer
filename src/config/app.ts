@@ -33,7 +33,7 @@ export const appConfig = {
   
   // App metadata
   app: {
-    name: 'Smart Notifications',
+    name: 'slackoptimizer',
     version: '1.0.0',
     description: 'AI-powered Slack notification filtering'
   }
