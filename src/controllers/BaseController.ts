@@ -1,78 +1,136 @@
-import { Request, Response } from 'express';
-import { SlackUser, SlackInteraction } from '@/types/slack';
+import { App as SlackApp, ExpressReceiver } from '@slack/bolt';
+import { BackendAPIService } from '../services/BackEndAPIService';
+import { SlackUser } from '../types/slack';
 
-// Base controller providing common functionality
 export abstract class BaseController {
-  protected logRequest(req: Request, action: string): void {
-    console.log(`[${this.constructor.name}] ${action}:`, {
-      method: req.method,
-      url: req.url,
-      timestamp: new Date().toISOString()
-    });
+  protected slackApp: SlackApp;
+  protected expressReceiver: ExpressReceiver;
+  protected backendAPI: BackendAPIService;
+
+  constructor(slackApp: SlackApp, expressReceiver: ExpressReceiver) {
+    this.slackApp = slackApp;
+    this.expressReceiver = expressReceiver;
+    this.backendAPI = new BackendAPIService();
   }
 
-  protected handleSuccess(res: Response, data: any = {}, message = 'Success'): Response {
-    return res.status(200).json({
-      success: true,
-      message,
-      data,
-      timestamp: new Date().toISOString()
-    });
-  }
-
-  protected handleError(res: Response, error: Error | string, statusCode = 500): Response {
-    const errorMessage = error instanceof Error ? error.message : error;
-    
-    console.error(`[${this.constructor.name}] Error:`, errorMessage);
-    
-    return res.status(statusCode).json({
-      success: false,
-      error: {
-        message: errorMessage,
-        code: statusCode
-      },
-      timestamp: new Date().toISOString()
-    });
-  }
-
-  protected extractSlackUser(body: any): SlackUser | null {
+  // Helper method to extract user info from Slack events
+  protected async getSlackUser(userId: string, teamId: string): Promise<SlackUser | null> {
     try {
-      // Handle different Slack payload structures
-      if (body.user) {
-        return body.user;
+      const result = await this.slackApp.client.users.info({
+        user: userId,
+        token: process.env.SLACK_BOT_TOKEN // We'll improve token management later
+      });
+
+      if (!result.ok || !result.user) {
+        throw new Error('Failed to fetch user info');
       }
-      if (body.event?.user) {
-        return { id: body.event.user, name: '', email: '', team_id: body.team_id };
-      }
-      return null;
+
+      return {
+        id: result.user.id!,
+        name: result.user.name || result.user.real_name || 'Unknown',
+        email: result.user.profile?.email || '',
+        team_id: teamId,
+        timezone: result.user.tz
+      };
     } catch (error) {
-      console.warn(`[${this.constructor.name}] Could not extract Slack user:`, error);
+      console.error(`Failed to get Slack user ${userId}:`, error);
       return null;
     }
   }
 
-  protected validateRequiredFields(data: any, fields: string[]): string[] {
-    const missing: string[] = [];
-    
-    fields.forEach(field => {
-      if (!data[field]) {
-        missing.push(field);
-      }
-    });
-    
-    return missing;
-  }
-
-  // Async wrapper for handling controller methods
-  protected async safeExecute<T>(
-    operation: () => Promise<T>,
-    context: string
-  ): Promise<T | null> {
+  // Helper method to get channel info
+  protected async getChannelInfo(channelId: string) {
     try {
-      return await operation();
+      const result = await this.slackApp.client.conversations.info({
+        channel: channelId,
+        token: process.env.SLACK_BOT_TOKEN
+      });
+
+      if (!result.ok || !result.channel) {
+        throw new Error('Failed to fetch channel info');
+      }
+
+      return {
+        id: result.channel.id!,
+        name: result.channel.name || 'unknown',
+        is_private: result.channel.is_private || false,
+        is_member: result.channel.is_member || false,
+        topic: result.channel.topic,
+        purpose: result.channel.purpose
+      };
     } catch (error) {
-      console.error(`[${this.constructor.name}] ${context} failed:`, error);
+      console.error(`Failed to get channel info ${channelId}:`, error);
       return null;
     }
   }
+
+  // Helper method to handle errors consistently
+  protected handleError(error: Error, context: string): void {
+    console.error(`[${this.constructor.name}] Error in ${context}:`, {
+      message: error.message,
+      stack: error.stack,
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  // Helper method to respond to interactions with error handling
+  protected async respondToInteraction(
+    respond: Function,
+    message: string,
+    ephemeral = true
+  ): Promise<void> {
+    try {
+      await respond({
+        text: message,
+        response_type: ephemeral ? 'ephemeral' : 'in_channel'
+      });
+    } catch (error) {
+      console.error('Failed to respond to interaction:', error);
+    }
+  }
+
+  // Helper method to send DM to user
+  protected async sendDirectMessage(userId: string, message: string): Promise<void> {
+    try {
+      await this.slackApp.client.chat.postMessage({
+        channel: userId,
+        text: message,
+        token: process.env.SLACK_BOT_TOKEN
+      });
+    } catch (error) {
+      console.error(`Failed to send DM to ${userId}:`, error);
+    }
+  }
+
+  // Helper method for backend health checks
+  protected async isBackendHealthy(): Promise<boolean> {
+    return this.backendAPI.isBackendAvailable();
+  }
+
+  // Helper method to ensure user exists in backend
+  protected async ensureUserExists(slackUser: SlackUser): Promise<void> {
+    try {
+      // Check if user exists
+      const existingUser = await this.backendAPI.getUser(
+        slackUser.id, 
+        slackUser.team_id
+      );
+
+      // Create user if doesn't exist
+      if (!existingUser) {
+        console.log(`Creating new user in backend: ${slackUser.id}`);
+        await this.backendAPI.createUser({
+          slack_user_id: slackUser.id,
+          team_id: slackUser.team_id,
+          email: slackUser.email
+        });
+      }
+    } catch (error) {
+      console.error(`Failed to ensure user exists: ${slackUser.id}`, error);
+      throw error;
+    }
+  }
+
+  // Abstract method that subclasses must implement
+  abstract register(): void;
 }
