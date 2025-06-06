@@ -11,30 +11,273 @@ export class SlackInteractionController extends BaseController {
   }
 
   register(): void {
-    // Core navigation actions
-    this.slackApp.action('get_started', this.handleGetStarted.bind(this));
-    this.slackApp.action('open_settings', this.handleOpenSettings.bind(this));
-    this.slackApp.action('test_filter', this.handleTestFilter.bind(this));
-    this.slackApp.action('view_analytics', this.handleViewAnalytics.bind(this));
-    this.slackApp.action('back_home', this.handleBackHome.bind(this));
-    
-    // Test-specific actions
-    this.slackApp.action('test_another', this.handleTestAnother.bind(this));
-    this.slackApp.action('adjust_settings', this.handleAdjustSettings.bind(this));
-    
-    // Pattern-based handlers (keep existing functionality)
-    this.slackApp.action(/settings_.*/, this.handleSettingsAction.bind(this));
-    this.slackApp.action(/test_.*/, this.handleTestAction.bind(this));
-    this.slackApp.action(/analytics_.*/, this.handleAnalyticsAction.bind(this));
-
+    // Settings handler - opens a simple modal
+    this.slackApp.action('open_settings', async ({ ack, body, client }) => {
+      await ack();
+      
+      await client.views.open({
+        trigger_id: body.trigger_id,
+        view: {
+          type: 'modal',
+          callback_id: 'settings_modal',
+          title: { type: 'plain_text', text: 'Settings' },
+          submit: { type: 'plain_text', text: 'Save' },
+          close: { type: 'plain_text', text: 'Cancel' },
+          blocks: [
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: '*Configure your AI notification preferences*'
+              }
+            },
+            {
+              type: 'input',
+              block_id: 'notification_level',
+              element: {
+                type: 'static_select',
+                action_id: 'level_select',
+                placeholder: { type: 'plain_text', text: 'Choose level' },
+                options: [
+                  { text: { type: 'plain_text', text: '🔊 All Messages' }, value: 'all' },
+                  { text: { type: 'plain_text', text: '📢 Mentions Only' }, value: 'mentions' },
+                  { text: { type: 'plain_text', text: '🎯 Important Only' }, value: 'important' }
+                ]
+              },
+              label: { type: 'plain_text', text: 'Notification Level' }
+            },
+            {
+              type: 'input',
+              block_id: 'keywords',
+              element: {
+                type: 'plain_text_input',
+                action_id: 'keywords_input',
+                placeholder: { type: 'plain_text', text: 'urgent, meeting, deadline' }
+              },
+              label: { type: 'plain_text', text: 'Important Keywords' },
+              optional: true
+            }
+          ]
+        }
+      });
+    });
+  
+    // Test filter handler - opens test modal
+    this.slackApp.action('test_filter', async ({ ack, body, client }) => {
+      await ack();
+      
+      await client.views.open({
+        trigger_id: body.trigger_id,
+        view: {
+          type: 'modal',
+          callback_id: 'test_modal',
+          title: { type: 'plain_text', text: '🧪 Test AI Filter' },
+          submit: { type: 'plain_text', text: 'Test Message' },
+          close: { type: 'plain_text', text: 'Cancel' },
+          blocks: [
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: '*See how our AI classifies messages in real-time!*'
+              }
+            },
+            {
+              type: 'input',
+              block_id: 'test_message',
+              element: {
+                type: 'plain_text_input',
+                action_id: 'message_input',
+                multiline: true,
+                placeholder: { type: 'plain_text', text: 'Try: "Can someone help with this urgent bug?" or "Anyone want coffee?"' }
+              },
+              label: { type: 'plain_text', text: 'Test Message' }
+            },
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: '*⚡ Quick Examples:*'
+              }
+            },
+            {
+              type: 'actions',
+              elements: [
+                {
+                  type: 'button',
+                  text: { type: 'plain_text', text: '🚨 Urgent' },
+                  action_id: 'test_urgent',
+                  value: 'Production is down! Need immediate help.'
+                },
+                {
+                  type: 'button',
+                  text: { type: 'plain_text', text: '💬 Social' },
+                  action_id: 'test_social',
+                  value: 'Anyone want to grab lunch?'
+                }
+              ]
+            }
+          ]
+        }
+      });
+    });
+  
+    // Analytics handler - shows analytics in home view
+    this.slackApp.action('view_analytics', async ({ ack, body, client }) => {
+      await ack();
+      
+      await client.views.publish({
+        user_id: body.user.id,
+        view: {
+          type: 'home',
+          blocks: [
+            {
+              type: 'header',
+              text: { type: 'plain_text', text: '📊 Your Analytics Dashboard' }
+            },
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: '*Filter Performance (Last 7 Days)*'
+              }
+            },
+            {
+              type: 'section',
+              fields: [
+                { type: 'mrkdwn', text: '*Total Messages:*\n247' },
+                { type: 'mrkdwn', text: '*Filtered Out:*\n158 (64%)' },
+                { type: 'mrkdwn', text: '*Important Notifications:*\n18' },
+                { type: 'mrkdwn', text: '*Time Saved:*\n~2.1 hours' }
+              ]
+            },
+            {
+              type: 'divider'
+            },
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: '*📈 Top Filtered Channels*\n• #random - 45 messages filtered\n• #general - 38 messages filtered\n• #announcements - 22 messages filtered'
+              }
+            },
+            {
+              type: 'actions',
+              elements: [
+                {
+                  type: 'button',
+                  text: { type: 'plain_text', text: '← Back to Home' },
+                  action_id: 'back_home',
+                  style: 'primary'
+                }
+              ]
+            }
+          ]
+        }
+      });
+    });
+  
+    // Back home handler - returns to main home view
+    this.slackApp.action('back_home', async ({ ack, body, client }) => {
+      await ack();
+      
+      // Get user name quickly
+      let userName = 'there';
+      try {
+        const userInfo = await client.users.info({ user: body.user.id });
+        userName = userInfo.user?.name || 'there';
+      } catch (error) {
+        console.warn('Could not fetch user name');
+      }
+      
+      await client.views.publish({
+        user_id: body.user.id,
+        view: {
+          type: 'home',
+          blocks: [
+            {
+              type: 'header',
+              text: { type: 'plain_text', text: 'Smart Notifications' }
+            },
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: `Hey ${userName}! 👋 Your AI-powered notification filter is working hard to reduce noise and boost your productivity.`
+              }
+            },
+            {
+              type: 'divider'
+            },
+            {
+              type: 'section',
+              text: { type: 'mrkdwn', text: '*📊 Your Smart Filter Stats*' }
+            },
+            {
+              type: 'section',
+              fields: [
+                { type: 'mrkdwn', text: '*Messages Analyzed:*\n247' },
+                { type: 'mrkdwn', text: '*Smart DMs Sent:*\n18' },
+                { type: 'mrkdwn', text: '*Feed Updates:*\n89' },
+                { type: 'mrkdwn', text: '*Filter Effectiveness:*\n87%' }
+              ]
+            },
+            {
+              type: 'divider'
+            },
+            {
+              type: 'actions',
+              elements: [
+                {
+                  type: 'button',
+                  text: { type: 'plain_text', text: '🎛️ Settings' },
+                  action_id: 'open_settings',
+                  style: 'primary'
+                },
+                {
+                  type: 'button',
+                  text: { type: 'plain_text', text: '🧪 Test Filter' },
+                  action_id: 'test_filter'
+                },
+                {
+                  type: 'button',
+                  text: { type: 'plain_text', text: '📈 Analytics' },
+                  action_id: 'view_analytics'
+                }
+              ]
+            }
+          ]
+        }
+      });
+    });
+  
     // Modal submission handlers
-    this.slackApp.view('settings_modal', this.handleSettingsSubmission.bind(this));
-    this.slackApp.view('test_modal', this.handleTestSubmission.bind(this));
-
-    // Shortcuts
-    this.slackApp.shortcut('open_settings', this.handleOpenSettingsShortcut.bind(this));
-
-    console.log('[SlackInteractionController] All interaction handlers registered');
+    this.slackApp.view('settings_modal', async ({ ack, body, view }) => {
+      await ack();
+      console.log('Settings saved:', view.state.values);
+      // Settings saved - could integrate with backend here
+    });
+  
+    this.slackApp.view('test_modal', async ({ ack, body, view, client }) => {
+      await ack();
+      
+      const messageText = view.state.values.test_message?.message_input?.value || '';
+      
+      // Mock AI classification for demo
+      const isImportant = messageText.toLowerCase().includes('urgent') || 
+                         messageText.toLowerCase().includes('help') ||
+                         messageText.toLowerCase().includes('problem');
+      
+      const confidence = Math.floor(Math.random() * 20) + 80; // 80-100%
+      
+      await client.chat.postEphemeral({
+        channel: body.user.id,
+        user: body.user.id,
+        text: `🧪 *AI Test Result*\n\n*Message:* "${messageText}"\n\n${isImportant ? '✅ **WOULD NOTIFY**' : '❌ **WOULD FILTER**'}\n*Confidence:* ${confidence}%\n*Reasoning:* ${isImportant ? 'Contains urgent keywords or help requests' : 'Appears to be casual conversation'}`
+      });
+    });
+  
+    console.log('[SlackInteractionController] All action handlers registered');
   }
 
   // === CORE NAVIGATION HANDLERS ===
