@@ -148,6 +148,251 @@ class SmartNotificationsApp {
         });
       });
 
+      this.app.post('/test-ai-dm', express.json(), async (req, res) => {
+        try {
+          const { message, userId, channelId } = req.body;
+          
+          if (!message || !userId) {
+            return res.status(400).json({ 
+              error: 'message and userId are required',
+              example: {
+                message: "Production is down! Need immediate help!",
+                userId: "U090ZTY9MFA",
+                channelId: "C1234567890"
+              }
+            });
+          }
+      
+          console.log(`🧪 Testing AI DM for message: "${message}"`);
+          
+          // Import AI service
+          const { AIBackendService } = await import('./services/AIBackendService');
+          const aiService = new AIBackendService();
+          
+          // Test the classification
+          const result = await aiService.testClassifyMessage(
+            message,
+            userId,
+            channelId || 'test-channel'
+          );
+          
+          console.log('🎯 AI Classification:', {
+            should_notify: result.should_notify,
+            category: result.category,
+            confidence: result.confidence
+          });
+          
+          // If AI says notify, send a DM
+          if (result.should_notify) {
+            console.log('🚨 Message classified as IMPORTANT - sending DM...');
+            
+            try {
+              const dmResult = await this.slackApp.client.chat.postMessage({
+                channel: userId, // Send DM to user
+                text: `🧠 *Smart Notification Alert*`,
+                blocks: [
+                  {
+                    type: 'section',
+                    text: {
+                      type: 'mrkdwn',
+                      text: `🚨 *AI detected an important message!*\n\n*Category:* ${result.category.toUpperCase()}\n*Confidence:* ${result.confidence}%`
+                    }
+                  },
+                  {
+                    type: 'section',
+                    text: {
+                      type: 'mrkdwn',
+                      text: `> ${message}`
+                    }
+                  },
+                  {
+                    type: 'context',
+                    elements: [
+                      {
+                        type: 'mrkdwn',
+                        text: `💡 *AI Reasoning:* ${result.reasoning}`
+                      }
+                    ]
+                  },
+                  {
+                    type: 'actions',
+                    elements: [
+                      {
+                        type: 'button',
+                        text: {
+                          type: 'plain_text',
+                          text: '✅ Got it'
+                        },
+                        action_id: 'acknowledge_test_dm'
+                      }
+                    ]
+                  }
+                ]
+              });
+              
+              console.log('✅ DM sent successfully:', dmResult.ok);
+              
+              res.json({
+                success: true,
+                classification: result,
+                dm_sent: true,
+                message: 'AI classified as important and DM was sent!',
+                dm_ts: dmResult.ts
+              });
+              
+            } catch (dmError) {
+              console.error('❌ Failed to send DM:', dmError);
+              res.json({
+                success: true,
+                classification: result,
+                dm_sent: false,
+                dm_error: dmError.message,
+                message: 'AI classified as important but DM failed'
+              });
+            }
+            
+          } else {
+            console.log('🔕 Message classified as NOT IMPORTANT - no DM sent');
+            res.json({
+              success: true,
+              classification: result,
+              dm_sent: false,
+              message: 'AI classified as not important - no DM needed'
+            });
+          }
+          
+        } catch (error) {
+          console.error('❌ AI DM test failed:', error);
+          res.status(500).json({
+            success: false,
+            error: error.message
+          });
+        }
+      });
+      
+      // Test UI for easy testing
+      this.app.get('/test-ai-dm-ui', (req, res) => {
+        res.send(`
+          <html>
+            <head>
+              <title>🧠 AI DM Testing</title>
+              <style>
+                body { font-family: Arial; padding: 20px; max-width: 800px; margin: 0 auto; }
+                .test-section { background: #f8f9fa; padding: 20px; margin: 20px 0; border-radius: 8px; }
+                button { padding: 12px 20px; margin: 8px; background: #4A154B; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; }
+                button:hover { background: #611f69; }
+                textarea { width: 100%; height: 80px; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-family: Arial; }
+                input[type="text"] { width: 300px; padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
+                #result { margin-top: 20px; padding: 15px; border-radius: 5px; }
+                .success { background: #d4edda; color: #155724; }
+                .error { background: #f8d7da; color: #721c24; }
+                .info { background: #d1ecf1; color: #0c5460; }
+              </style>
+            </head>
+            <body>
+              <h1>🧠 AI Smart Notification Testing</h1>
+              <p>Test how the AI classifies messages and sends DMs for important ones.</p>
+              
+              <div class="test-section">
+                <h3>📝 Custom Message Test</h3>
+                <textarea id="customMessage" placeholder="Enter your test message here...">Production database is down! All services affected. Need immediate attention!</textarea><br>
+                <label>User ID: </label>
+                <input type="text" id="userId" value="U090ZTY9MFA" placeholder="Your Slack User ID"><br><br>
+                <button onclick="testCustom()">🧪 Test AI Classification & DM</button>
+              </div>
+              
+              <div class="test-section">
+                <h3>⚡ Quick Test Examples</h3>
+                <p>Click any button to test with pre-built scenarios:</p>
+                
+                <button onclick="testMessage('🚨 URGENT: Production is down! Payment system not working. Need immediate help!')">
+                  🚨 Urgent Alert
+                </button>
+                
+                <button onclick="testMessage('The deployment pipeline failed. Can someone help debug this issue?')">
+                  ⚠️ Technical Issue
+                </button>
+                
+                <button onclick="testMessage('Meeting reminder: All-hands at 3 PM today in the main conference room.')">
+                  📅 Meeting Notice
+                </button>
+                
+                <button onclick="testMessage('Anyone want to grab coffee? There\\'s a new place down the street.')">
+                  ☕ Social Chat
+                </button>
+                
+                <button onclick="testMessage('Great job on the presentation today! Really well done.')">
+                  👏 Casual Praise
+                </button>
+              </div>
+              
+              <div id="result"></div>
+              
+              <script>
+                async function testMessage(message, customUserId = null) {
+                  const resultDiv = document.getElementById('result');
+                  const userId = customUserId || document.getElementById('userId').value;
+                  
+                  if (!userId) {
+                    alert('Please enter your Slack User ID');
+                    return;
+                  }
+                  
+                  resultDiv.innerHTML = '<div class="info">🤖 AI is analyzing message and deciding whether to send DM...</div>';
+                  
+                  try {
+                    const response = await fetch('/test-ai-dm', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ 
+                        message, 
+                        userId,
+                        channelId: 'test-channel'
+                      })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                      const dmStatus = data.dm_sent ? '✅ DM SENT' : '🔕 NO DM';
+                      const className = data.dm_sent ? 'success' : 'info';
+                      
+                      resultDiv.innerHTML = \`
+                        <div class="\${className}">
+                          <h3>\${dmStatus}</h3>
+                          <p><strong>Message:</strong> "\${message}"</p>
+                          <p><strong>AI Decision:</strong> \${data.classification.should_notify ? 'NOTIFY' : 'FILTER'}</p>
+                          <p><strong>Category:</strong> \${data.classification.category.toUpperCase()}</p>
+                          <p><strong>Confidence:</strong> \${data.classification.confidence}%</p>
+                          <p><strong>Reasoning:</strong> \${data.classification.reasoning}</p>
+                          <p><strong>Result:</strong> \${data.message}</p>
+                          \${data.dm_sent ? '<p><strong>✅ Check your Slack DMs!</strong></p>' : ''}
+                        </div>
+                      \`;
+                    } else {
+                      resultDiv.innerHTML = \`<div class="error">❌ Error: \${data.error}</div>\`;
+                    }
+                  } catch (error) {
+                    resultDiv.innerHTML = \`<div class="error">❌ Network Error: \${error.message}</div>\`;
+                  }
+                }
+                
+                function testCustom() {
+                  const message = document.getElementById('customMessage').value;
+                  const userId = document.getElementById('userId').value;
+                  
+                  if (message.trim() && userId.trim()) {
+                    testMessage(message, userId);
+                  } else {
+                    alert('Please enter both a message and user ID');
+                  }
+                }
+              </script>
+            </body>
+          </html>
+        `);
+      });
+
       // Health check
       this.app.get('/health', (req, res) => {
         console.log('❤️ Health check requested');
