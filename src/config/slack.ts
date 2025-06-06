@@ -2,8 +2,6 @@ import { config } from 'dotenv';
 
 config();
 
-// src/config/slack.ts - Updated with VALID scopes only
-
 export const slackConfig = {
     // OAuth & App Credentials
     clientId: process.env.SLACK_CLIENT_ID || '',
@@ -13,7 +11,7 @@ export const slackConfig = {
     // Bot Token (for API calls after installation)
     botToken: process.env.SLACK_BOT_TOKEN || '',
     
-    // CORRECTED OAuth Scopes - these are all VALID
+    // UPDATED OAuth Scopes - now includes im:write for DMs
     scopes: [
       'channels:history',    // Read message history in public channels
       'channels:read',       // View basic info about public channels
@@ -22,6 +20,7 @@ export const slackConfig = {
       'groups:read',         // View basic info about private channels
       'im:history',          // Read direct message history
       'im:read',             // View basic info about direct messages
+      'im:write',            // Send direct messages to users
       'mpim:history',        // Read group direct message history
       'mpim:read',           // View basic info about group direct messages
       'reactions:read',      // Read emoji reactions

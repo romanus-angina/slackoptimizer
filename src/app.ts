@@ -68,67 +68,16 @@ class SmartNotificationsApp {
   }
 
   private initializeSlack(): void {
-    // Create ExpressReceiver with both properties to satisfy runtime requirements
-    this.expressReceiver = new ExpressReceiver({
-      signingSecret: slackConfig.signingSecret,
-      clientId: slackConfig.clientId,
-      clientSecret: slackConfig.clientSecret,
-      stateSecret: 'my-state-secret-' + Date.now(),
-      
-      // OAuth settings
-      scopes: slackConfig.scopes,
-      installerOptions: {
-        redirectUri: slackConfig.redirectUri,
-        redirectUriPath: '/slack/oauth/callback'
-      },
-      
-      // Installation store for multi-workspace
-      installationStore: {
-        storeInstallation: async (installation: Installation) => {
-          console.log('Installation stored:', installation.team?.id);
-          // TODO: Implement proper installation storage
-          return;
-        },
-        fetchInstallation: async (installQuery: InstallationQuery<boolean>) => {
-          console.log('Fetching installation for:', installQuery.teamId);
-          
-          // For development, return a mock installation
-          if (installQuery.teamId) {
-            return {
-              team: { id: installQuery.teamId },
-              enterprise: installQuery.enterpriseId ? { id: installQuery.enterpriseId } : undefined,
-              user: { 
-                id: installQuery.userId || '',
-                token: undefined,
-                scopes: []
-              },
-              bot: {
-                token: slackConfig.botToken,
-                scopes: slackConfig.scopes,
-                id: 'bot-id',
-                userId: 'bot-user-id'
-              },
-              incomingWebhook: undefined,
-              appId: undefined,
-              tokenType: 'bot' as const
-            };
-          }
-          throw new Error('Failed to fetch installation');
-        },
-        deleteInstallation: async (installQuery: InstallationQuery<boolean>) => {
-          console.log('Deleting installation for:', installQuery.teamId);
-          // TODO: Implement proper installation deletion
-          return;
-        }
-      }
-    } as any); // Cast to any to bypass TypeScript checking
-
-    // Create SlackApp with the ExpressReceiver
+    // Simple single-workspace setup using bot token
     this.slackApp = new SlackApp({
-      receiver: this.expressReceiver
+      token: slackConfig.botToken,  // Use the bot token directly
+      signingSecret: slackConfig.signingSecret,
+      
+      // Remove the complex OAuth installation store for now
+      // This will work for single workspace during hackathon
     });
-
-    console.log('Slack app initialized (multi-workspace OAuth mode)');
+  
+    console.log('Slack app initialized (single workspace mode with bot token)');
   }
 
   private initializeControllers(): void {
