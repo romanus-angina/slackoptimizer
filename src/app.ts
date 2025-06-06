@@ -1,13 +1,13 @@
 import express from 'express';
-import SlackBolt from '@slack/bolt';
-const { App: SlackApp, ExpressReceiver } = SlackBolt;
+import SlackBolt, { App, ExpressReceiver } from '@slack/bolt';
+const { App: SlackApp, ExpressReceiver: ExpressReceiverClass } = SlackBolt;
 import { appConfig } from './config/app';
 import { slackConfig, validateSlackConfig } from './config/slack';
 import { backendConfig, validateBackendConfig } from './config/backend';
 
 class SmartNotificationsApp {
   private app!: express.Application;
-  private slackApp!: SlackApp;
+  private slackApp!: App;
   private expressReceiver!: ExpressReceiver;
   private server: any;
 
@@ -55,7 +55,7 @@ class SmartNotificationsApp {
 
   private initializeSlack(): void {
     // Create ExpressReceiver first
-    this.expressReceiver = new ExpressReceiver({
+    this.expressReceiver = new ExpressReceiverClass({
       clientId: slackConfig.clientId,
       clientSecret: slackConfig.clientSecret,
       signingSecret: slackConfig.signingSecret,
@@ -184,7 +184,7 @@ Backend API: ${backendConfig.baseUrl}
   }
 
   // Expose the Slack app for use by controllers
-  public getSlackApp(): SlackApp {
+  public getSlackApp(): App {
     return this.slackApp;
   }
 
