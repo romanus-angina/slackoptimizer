@@ -88,9 +88,10 @@ class SmartNotificationsApp {
       }
     });
 
-    // Create SlackApp with the ExpressReceiver
+    // Create SlackApp with the ExpressReceiver and bot token
     this.slackApp = new SlackApp({
-      receiver: this.expressReceiver
+      receiver: this.expressReceiver,
+      token: slackConfig.botToken
     });
 
     console.log('Slack app initialized');
