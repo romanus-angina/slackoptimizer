@@ -1,22 +1,21 @@
 import { App as SlackApp, ExpressReceiver } from '@slack/bolt';
-import { BackendAPIService } from '../services/BackEndAPIService';
+import { AIBackendService } from '../services/AIBackendService'; // New AI service
 import { SlackUser } from '../types/slack';
 
 export abstract class BaseController {
   protected slackApp: SlackApp;
   protected expressReceiver: ExpressReceiver;
-  protected backendAPI: BackendAPIService;
+  protected backendAPI: AIBackendService; // Real AI backend
 
   constructor(slackApp: SlackApp, expressReceiver: ExpressReceiver) {
     this.slackApp = slackApp;
     this.expressReceiver = expressReceiver;
-    this.backendAPI = new BackendAPIService();
+    this.backendAPI = new AIBackendService(); // Initialize real AI service
   }
 
   // Helper method to extract user info from Slack events
   protected async getSlackUser(userId: string, teamId: string): Promise<SlackUser | null> {
     try {
-      // FIXED: Remove manual token - let Bolt handle it
       const result = await this.slackApp.client.users.info({
         user: userId
       });
@@ -41,7 +40,6 @@ export abstract class BaseController {
   // Helper method to get channel info
   protected async getChannelInfo(channelId: string) {
     try {
-      // FIXED: Remove manual token - let Bolt handle it
       const result = await this.slackApp.client.conversations.info({
         channel: channelId
       });
@@ -92,7 +90,6 @@ export abstract class BaseController {
   // Helper method to send DM to user
   protected async sendDirectMessage(userId: string, message: string): Promise<void> {
     try {
-      // FIXED: Remove manual token - let Bolt handle it
       await this.slackApp.client.chat.postMessage({
         channel: userId,
         text: message
@@ -116,15 +113,8 @@ export abstract class BaseController {
         slackUser.team_id
       );
 
-      // Create user if doesn't exist
-      if (!existingUser) {
-        console.log(`Creating new user in backend: ${slackUser.id}`);
-        await this.backendAPI.createUser({
-          slack_user_id: slackUser.id,
-          team_id: slackUser.team_id,
-          email: slackUser.email
-        });
-      }
+      // User will be auto-created by AIBackendService if doesn't exist
+      console.log(`✅ User ensured: ${slackUser.id}`);
     } catch (error) {
       console.error(`Failed to ensure user exists: ${slackUser.id}`, error);
       // Don't throw error - just log it for hackathon demo

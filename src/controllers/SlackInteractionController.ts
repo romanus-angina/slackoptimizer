@@ -259,23 +259,207 @@ export class SlackInteractionController extends BaseController {
     });
   
     this.slackApp.view('test_modal', async ({ ack, body, view, client }) => {
-      await ack();
+        try {
+          const messageText = view.state.values.test_message?.message_input?.value || '';
+          
+          if (!messageText.trim()) {
+            // Show error in modal
+            await ack({
+              response_action: 'errors',
+              errors: {
+                test_message: 'Please enter a message to test!'
+              }
+            });
+            return;
+          }
       
-      const messageText = view.state.values.test_message?.message_input?.value || '';
+          // Acknowledge the modal submission first
+          await ack();
       
-      // Mock AI classification for demo
-      const isImportant = messageText.toLowerCase().includes('urgent') || 
-                         messageText.toLowerCase().includes('help') ||
-                         messageText.toLowerCase().includes('problem');
+          console.log(`🧪 Testing message: "${messageText}"`);
       
-      const confidence = Math.floor(Math.random() * 20) + 80; // 80-100%
+          // Show loading state by updating the home view
+          await client.views.publish({
+            user_id: body.user.id,
+            view: {
+              type: 'home',
+              blocks: [
+                {
+                  type: 'header',
+                  text: { type: 'plain_text', text: '🧪 AI Classification Test' }
+                },
+                {
+                  type: 'section',
+                  text: {
+                    type: 'mrkdwn',
+                    text: '*Testing Message:*\n> ' + messageText
+                  }
+                },
+                {
+                  type: 'section',
+                  text: {
+                    type: 'mrkdwn',
+                    text: '🤖 *AI is analyzing your message...*\n\nThis usually takes just a moment!'
+                  }
+                }
+              ]
+            }
+          });
       
-      await client.chat.postEphemeral({
-        channel: body.user.id,
-        user: body.user.id,
-        text: `🧪 *AI Test Result*\n\n*Message:* "${messageText}"\n\n${isImportant ? '✅ **WOULD NOTIFY**' : '❌ **WOULD FILTER**'}\n*Confidence:* ${confidence}%\n*Reasoning:* ${isImportant ? 'Contains urgent keywords or help requests' : 'Appears to be casual conversation'}`
+          // Use the real AI classification
+          const result = await this.backendAPI.testClassifyMessage(
+            messageText,
+            body.user.id,
+            'general'
+          );
+      
+          console.log(`🎯 Test result: ${result.should_notify ? 'NOTIFY' : 'FILTER'} (${result.confidence}%)`);
+      
+          // Format the result with rich UI in home view
+          const emoji = result.should_notify ? '✅' : '❌';
+          const decision = result.should_notify ? 'WOULD NOTIFY' : 'WOULD FILTER';
+          const confidenceColor = result.confidence > 80 ? '🟢' : result.confidence > 60 ? '🟡' : '🟠';
+          
+          const categoryEmojis: { [key: string]: string } = {
+            'urgent': '🚨',
+            'important': '⚠️',
+            'mention': '📢',
+            'question': '❓',
+            'meeting': '📅',
+            'social': '💬',
+            'spam': '🗑️',
+            'general': '💬'
+          };
+      
+          // Show results in home view (no DM needed!)
+          await client.views.publish({
+            user_id: body.user.id,
+            view: {
+              type: 'home',
+              blocks: [
+                {
+                  type: 'header',
+                  text: { type: 'plain_text', text: '🧪 AI Classification Result' }
+                },
+                {
+                  type: 'section',
+                  text: {
+                    type: 'mrkdwn',
+                    text: `*Original Message:*\n> ${messageText}`
+                  }
+                },
+                {
+                  type: 'divider'
+                },
+                {
+                  type: 'section',
+                  text: {
+                    type: 'mrkdwn',
+                    text: `${emoji} *${decision}*`
+                  },
+                  fields: [
+                    {
+                      type: 'mrkdwn',
+                      text: `*Category:*\n${categoryEmojis[result.category] || '💬'} ${result.category.toUpperCase()}`
+                    },
+                    {
+                      type: 'mrkdwn',
+                      text: `*Confidence:*\n${confidenceColor} ${result.confidence}%`
+                    },
+                    {
+                      type: 'mrkdwn',
+                      text: `*Priority:*\n${result.priority.toUpperCase()}`
+                    },
+                    {
+                      type: 'mrkdwn',
+                      text: `*Tags:*\n${result.tags.length > 0 ? result.tags.join(', ') : 'none'}`
+                    }
+                  ]
+                },
+                {
+                  type: 'section',
+                  text: {
+                    type: 'mrkdwn',
+                    text: `*🤖 AI Reasoning:*\n${result.reasoning}`
+                  }
+                },
+                {
+                  type: 'divider'
+                },
+                {
+                  type: 'section',
+                  text: {
+                    type: 'mrkdwn',
+                    text: '*💡 What this means:*\n' + (result.should_notify 
+                      ? 'This message would trigger a smart notification DM to you.'
+                      : 'This message would be filtered and only appear in your feed.')
+                  }
+                },
+                {
+                  type: 'actions',
+                  elements: [
+                    {
+                      type: 'button',
+                      text: { type: 'plain_text', text: '🧪 Test Another Message' },
+                      action_id: 'test_filter',
+                      style: 'primary'
+                    },
+                    {
+                      type: 'button',
+                      text: { type: 'plain_text', text: '⚙️ Adjust Settings' },
+                      action_id: 'open_settings'
+                    },
+                    {
+                      type: 'button',
+                      text: { type: 'plain_text', text: '🏠 Back to Home' },
+                      action_id: 'back_home'
+                    }
+                  ]
+                }
+              ]
+            }
+          });
+      
+        } catch (error) {
+          console.error('❌ Test classification error:', error);
+          
+          // Show error in home view
+          await client.views.publish({
+            user_id: body.user.id,
+            view: {
+              type: 'home',
+              blocks: [
+                {
+                  type: 'header',
+                  text: { type: 'plain_text', text: '❌ Test Failed' }
+                },
+                {
+                  type: 'section',
+                  text: {
+                    type: 'mrkdwn',
+                    text: `*Error:* ${error instanceof Error ? error.message : 'Unknown error'}\n\nPlease try again or check the backend connection.`
+                  }
+                },
+                {
+                  type: 'actions',
+                  elements: [
+                    {
+                      type: 'button',
+                      text: { type: 'plain_text', text: '🔄 Try Again' },
+                      action_id: 'test_filter'
+                    },
+                    {
+                      type: 'button',
+                      text: { type: 'plain_text', text: '🏠 Back to Home' },
+                      action_id: 'back_home'
+                    }
+                  ]
+                }
+              ]
+            }
+          });
+        }
       });
-    });
   
     console.log('[SlackInteractionController] All action handlers registered');
   }
