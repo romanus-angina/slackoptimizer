@@ -120,6 +120,101 @@ class SmartNotificationsApp {
       });
     });
 
+    this.app.get('/slack/oauth/callback', async (req, res) => {
+      try {
+        const { code, state, error } = req.query;
+    
+        if (error) {
+          console.error('OAuth error:', error);
+          return res.status(400).send(`
+            <html>
+              <head><title>Installation Failed</title></head>
+              <body>
+                <h1>Installation Failed</h1>
+                <p>Error: ${error}</p>
+                <p><a href="/">Try again</a></p>
+              </body>
+            </html>
+          `);
+        }
+    
+        if (!code) {
+          return res.status(400).send(`
+            <html>
+              <body>
+                <h1>Installation Failed</h1>
+                <p>Missing authorization code</p>
+                <p><a href="/">Try again</a></p>
+              </body>
+            </html>
+          `);
+        }
+    
+        // Exchange code for tokens
+        const result = await this.slackApp.client.oauth.v2.access({
+          client_id: slackConfig.clientId,
+          client_secret: slackConfig.clientSecret,
+          code: code as string,
+          redirect_uri: slackConfig.redirectUri
+        });
+    
+        if (!result.ok) {
+          throw new Error(`OAuth exchange failed: ${result.error}`);
+        }
+    
+        console.log('OAuth success:', {
+          team_id: result.team?.id,
+          user_id: result.authed_user?.id,
+          bot_user_id: result.bot_user_id
+        });
+    
+        // Send success response
+        res.send(`
+          <html>
+            <head>
+              <title>Installation Successful</title>
+              <style>
+                body { 
+                  font-family: Arial, sans-serif; 
+                  text-align: center; 
+                  padding: 50px;
+                  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                  color: white;
+                }
+                .container { 
+                  max-width: 500px;
+                  margin: 0 auto;
+                  background: rgba(255,255,255,0.1);
+                  padding: 40px;
+                  border-radius: 20px;
+                }
+              </style>
+            </head>
+            <body>
+              <div class="container">
+                <h1>🎉 Success!</h1>
+                <p>Smart Notifications has been installed!</p>
+                <p>Go to your Slack app and click on Smart Notifications in the sidebar.</p>
+                <a href="slack://app" style="color: white;">Open Slack</a>
+              </div>
+            </body>
+          </html>
+        `);
+    
+      } catch (error) {
+        console.error('OAuth callback error:', error);
+        res.status(500).send(`
+          <html>
+            <body>
+              <h1>Installation Error</h1>
+              <p>Something went wrong: ${error instanceof Error ? error.message : 'Unknown error'}</p>
+              <p><a href="/">Retry Installation</a></p>
+            </body>
+          </html>
+        `);
+      }
+    });
+
     // Slack OAuth install endpoint
     this.app.get('/slack/install', (req, res) => {
       const installUrl = this.oauthController.getInstallUrl();
