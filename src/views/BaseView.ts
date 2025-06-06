@@ -1,11 +1,13 @@
 import { BlockKitView, BlockKitElement, ViewState } from '@/types/ui';
 
 // Base view class for Block Kit rendering
-export abstract class BaseView {
+export class BaseView {
   protected state: ViewState = { loading: false };
 
   // Abstract method that each view must implement
-  abstract render(data?: any): BlockKitView;
+  render(): any {
+    throw new Error('render() must be implemented by subclass');
+  }
 
   // Common Block Kit elements
   protected createHeaderBlock(text: string): BlockKitElement {

@@ -4,13 +4,11 @@ import { BlockKitView } from '../types/ui';
 export class SettingsView extends BaseView {
   
   // Main settings modal
-  renderModal(currentSettings?: {
+  renderModal(settings: {
     notification_level?: string;
     quiet_hours?: { enabled: boolean; start_time: string; end_time: string };
     keywords?: string[];
-  }): any {
-    
-    const settings = currentSettings || {};
+  } = {}): any {
     const notificationLevel = settings.notification_level || 'mentions';
     const quietHours = settings.quiet_hours || { enabled: false, start_time: '22:00', end_time: '08:00' };
     
@@ -19,11 +17,11 @@ export class SettingsView extends BaseView {
       callback_id: 'settings_modal',
       title: {
         type: 'plain_text',
-        text: 'Smart Notification Settings'
+        text: 'Notification Settings'
       },
       submit: {
         type: 'plain_text',
-        text: 'Save Settings'
+        text: 'Save'
       },
       close: {
         type: 'plain_text',
