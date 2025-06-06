@@ -22,16 +22,26 @@ class SmartNotificationsApp {
   private interactionController!: SlackInteractionController;
 
   constructor() {
-    this.validateConfiguration();
-    this.initializeSlack();          // ← MUST BE FIRST - creates expressReceiver
-    this.initializeExpress();        // ← SECOND - uses expressReceiver.app
-    this.initializeControllers();
-    this.setupRoutes();
-    this.setupErrorHandling();
+    try {
+      console.log('🚀 Starting SmartNotificationsApp...');
+      this.validateConfiguration();
+      this.initializeSlack();
+      this.initializeExpress();
+      this.setupTestRoutes(); // Add test routes FIRST
+      this.setupSlackDebugHandlers(); // Add Slack debug handlers
+      this.initializeControllers(); // Then add your controllers
+      this.setupMainRoutes(); // Then main routes
+      this.setupErrorHandling();
+      console.log('✅ SmartNotificationsApp initialized successfully');
+    } catch (error) {
+      console.error('❌ Failed to initialize app:', error);
+      throw error;
+    }
   }
 
   private validateConfiguration(): void {
-    // Validate Slack config
+    console.log('🔍 Validating configuration...');
+    
     const slackErrors = validateSlackConfig();
     if (slackErrors.length > 0) {
       console.error('❌ Slack configuration errors:');
@@ -39,7 +49,6 @@ class SmartNotificationsApp {
       process.exit(1);
     }
 
-    // Validate Backend config
     const backendErrors = validateBackendConfig();
     if (backendErrors.length > 0) {
       console.error('❌ Backend configuration errors:');
@@ -53,374 +62,382 @@ class SmartNotificationsApp {
   private initializeSlack(): void {
     console.log('🔧 Initializing Slack...');
     
-    // Create ExpressReceiver first
-    this.expressReceiver = new ExpressReceiver({
-      signingSecret: slackConfig.signingSecret,
-      endpoints: '/slack/events',
-      processBeforeResponse: true
-    });
+    try {
+      this.expressReceiver = new ExpressReceiver({
+        signingSecret: slackConfig.signingSecret,
+        endpoints: '/slack/events',
+        processBeforeResponse: true,
+      });
+      console.log('✅ ExpressReceiver created');
 
-    console.log('✅ ExpressReceiver created');
-
-    // Create Slack app with the receiver
-    this.slackApp = new SlackApp({
-      token: slackConfig.botToken,
-      signingSecret: slackConfig.signingSecret,
-      receiver: this.expressReceiver
-    });
-
-    console.log('✅ Slack app initialized with ExpressReceiver');
+      this.slackApp = new SlackApp({
+        token: slackConfig.botToken,
+        signingSecret: slackConfig.signingSecret,
+        receiver: this.expressReceiver,
+        logLevel: 'DEBUG'
+      });
+      console.log('✅ Slack app initialized');
+    } catch (error) {
+      console.error('❌ Failed to initialize Slack:', error);
+      throw error;
+    }
   }
 
   private initializeExpress(): void {
     console.log('🔧 Initializing Express...');
     
-    // Now this should work because expressReceiver was created in initializeSlack()
-    this.app = this.expressReceiver.app;
-    
-    console.log('✅ Express app obtained from receiver');
-    
-    // CORS configuration
-    this.app.use((_req, res, next) => {
-      res.header('Access-Control-Allow-Origin', appConfig.security.corsOrigins.join(','));
-      res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-      res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-      next();
-    });
+    try {
+      this.app = this.expressReceiver.app;
+      console.log('✅ Express app obtained from receiver');
+      
+      // Add JSON parsing
+      this.app.use(express.json());
+      this.app.use(express.urlencoded({ extended: true }));
+      
+      // Simple request logging
+      this.app.use((req, res, next) => {
+        console.log(`📥 ${req.method} ${req.path} - ${new Date().toISOString()}`);
+        next();
+      });
 
-    console.log('✅ Express app configured with CORS');
+      // CORS
+      this.app.use((_req, res, next) => {
+        res.header('Access-Control-Allow-Origin', '*');
+        res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+        res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+        next();
+      });
+
+      console.log('✅ Express configured');
+    } catch (error) {
+      console.error('❌ Failed to initialize Express:', error);
+      throw error;
+    }
+  }
+
+  // Add test routes FIRST to verify basic Express functionality
+  private setupTestRoutes(): void {
+    console.log('🧪 Setting up test routes...');
+    
+    try {
+      // Basic connectivity test
+      this.app.get('/ping', (req, res) => {
+        console.log('🏓 Ping received');
+        res.json({ 
+          status: 'pong', 
+          timestamp: new Date().toISOString(),
+          message: 'Server is working!'
+        });
+      });
+
+      // Slack connectivity test
+      this.app.post('/test-slack-connection', (req, res) => {
+        console.log('🧪 TEST CONNECTION ENDPOINT HIT:', {
+          body: req.body,
+          headers: {
+            'content-type': req.headers['content-type'],
+            'user-agent': req.headers['user-agent']
+          },
+          timestamp: new Date().toISOString()
+        });
+        res.json({ 
+          success: true, 
+          message: 'Server is reachable!',
+          receivedData: req.body,
+          timestamp: new Date().toISOString()
+        });
+      });
+
+      // Health check
+      this.app.get('/health', (req, res) => {
+        console.log('❤️ Health check requested');
+        res.json({
+          status: 'healthy',
+          timestamp: new Date().toISOString(),
+          slack_configured: !!slackConfig.botToken,
+          environment: appConfig.server.env
+        });
+      });
+
+      console.log('✅ Test routes set up');
+    } catch (error) {
+      console.error('❌ Failed to setup test routes:', error);
+      throw error;
+    }
+  }
+
+  // Add Slack event debugging
+  private setupSlackDebugHandlers(): void {
+    console.log('🎯 Setting up Slack debug handlers...');
+    
+    try {
+      // Log ALL incoming Slack requests - use proper Express middleware
+      this.app.use((req, res, next) => {
+        if (req.path.startsWith('/slack/')) {
+          console.log('🚨 SLACK REQUEST:', {
+            method: req.method,
+            path: req.path,
+            contentType: req.headers['content-type'],
+            hasSignature: !!req.headers['x-slack-signature'],
+            hasTimestamp: !!req.headers['x-slack-request-timestamp'],
+            bodySize: req.body ? JSON.stringify(req.body).length : 0
+          });
+        }
+        next();
+      });
+
+      // Catch ALL Slack events
+      this.slackApp.use(async ({ event, next, body }) => {
+        console.log('🔔 SLACK EVENT:', {
+          bodyType: body?.type,
+          eventType: event?.type,
+          subtype: event?.subtype,
+          user: event?.user,
+          channel: event?.channel,
+          hasText: !!event?.text
+        });
+        await next();
+      });
+
+      // Handle URL verification (happens during Slack app setup)
+      this.slackApp.use(async ({ body, next }) => {
+        if (body?.type === 'url_verification') {
+          console.log('✅ URL VERIFICATION RECEIVED - Slack is connecting!');
+        }
+        await next();
+      });
+
+      // Simple message test
+      this.slackApp.message(async ({ message, client }) => {
+        if (!message.bot_id && message.text) {
+          console.log('💬 USER MESSAGE:', {
+            user: message.user,
+            channel: message.channel,
+            text: message.text.substring(0, 50) + '...'
+          });
+          
+          // Auto-respond to test
+          if (message.text.toLowerCase().includes('test bot')) {
+            console.log('🧪 Responding to test command...');
+            try {
+              await client.chat.postMessage({
+                channel: message.channel,
+                text: `✅ Bot is working! Time: ${new Date().toLocaleTimeString()}`
+              });
+              console.log('✅ Test response sent');
+            } catch (error) {
+              console.error('❌ Failed to send test response:', error);
+            }
+          }
+        }
+      });
+
+      // App mention test
+      this.slackApp.event('app_mention', async ({ event, client }) => {
+        console.log('📢 BOT MENTIONED:', event.text);
+        try {
+          await client.chat.postMessage({
+            channel: event.channel,
+            thread_ts: event.ts,
+            text: `Hello! I'm alive! 🤖 Time: ${new Date().toLocaleTimeString()}`
+          });
+          console.log('✅ Mention response sent');
+        } catch (error) {
+          console.error('❌ Failed to respond to mention:', error);
+        }
+      });
+
+      console.log('✅ Slack debug handlers set up');
+    } catch (error) {
+      console.error('❌ Failed to setup Slack handlers:', error);
+      throw error;
+    }
   }
 
   private initializeControllers(): void {
     console.log('🔧 Initializing controllers...');
+    
+    try {
+      this.oauthController = new SlackOAuthController(this.slackApp, this.expressReceiver);
+      this.eventController = new SlackEventController(this.slackApp, this.expressReceiver);
+      this.interactionController = new SlackInteractionController(this.slackApp, this.expressReceiver);
 
-    // Initialize controllers with the Slack app and receiver
-    this.oauthController = new SlackOAuthController(this.slackApp, this.expressReceiver);
-    this.eventController = new SlackEventController(this.slackApp, this.expressReceiver);
-    this.interactionController = new SlackInteractionController(this.slackApp, this.expressReceiver);
+      this.oauthController.register();
+      this.eventController.register();
+      this.interactionController.register();
 
-    // Register all controller routes and event handlers
-    this.oauthController.register();
-    this.eventController.register();
-    this.interactionController.register();
-
-    console.log('✅ Controllers initialized and registered');
+      console.log('✅ Controllers initialized - your original handlers are active');
+    } catch (error) {
+      console.error('❌ Failed to initialize controllers:', error);
+      // Don't throw - let the app continue with basic functionality
+      console.warn('⚠️ Continuing without controllers...');
+    }
   }
 
-  private setupRoutes(): void {
-    console.log('🔧 Setting up routes...');
+  private setupMainRoutes(): void {
+    console.log('🔧 Setting up main routes...');
     
-    // Health check endpoint
-    this.app.get('/health', (req, res) => {
-      res.json({
-        status: 'healthy',
-        timestamp: new Date().toISOString(),
-        version: appConfig.app.version,
-        environment: appConfig.server.env
+    try {
+      // OAuth callback
+      this.app.get('/slack/oauth/callback', async (req, res) => {
+        try {
+          console.log('🔑 OAuth callback received');
+          const { code, error } = req.query;
+      
+          if (error) {
+            console.error('❌ OAuth error:', error);
+            return res.status(400).send('OAuth error: ' + error);
+          }
+      
+          if (!code) {
+            return res.status(400).send('Missing authorization code');
+          }
+      
+          const result = await this.slackApp.client.oauth.v2.access({
+            client_id: slackConfig.clientId,
+            client_secret: slackConfig.clientSecret,
+            code: code as string,
+            redirect_uri: slackConfig.redirectUri
+          });
+      
+          if (!result.ok) {
+            throw new Error(`OAuth exchange failed: ${result.error}`);
+          }
+      
+          console.log('✅ OAuth success:', {
+            team_id: result.team?.id,
+            user_id: result.authed_user?.id
+          });
+      
+          res.send(`
+            <html>
+              <body style="font-family: Arial; text-align: center; padding: 50px;">
+                <h1>🎉 Installation Successful!</h1>
+                <p>Smart Notifications is now installed!</p>
+                <h3>🧪 Test the bot:</h3>
+                <ol style="text-align: left; max-width: 400px; margin: 20px auto;">
+                  <li>Go to any Slack channel where the bot is present</li>
+                  <li>Type: <code>test bot</code></li>
+                  <li>Or mention the bot: <code>@YourBot hello</code></li>
+                  <li>You should get a response!</li>
+                </ol>
+                <a href="slack://app" style="color: #4A154B;">Open Slack</a>
+              </body>
+            </html>
+          `);
+      
+        } catch (error) {
+          console.error('❌ OAuth callback error:', error);
+          res.status(500).send('Installation failed: ' + (error as Error).message);
+        }
       });
-    });
 
-    this.app.get('/slack/oauth/callback', async (req, res) => {
-      try {
-        const { code, state, error } = req.query;
-    
-        if (error) {
-          console.error('OAuth error:', error);
-          return res.status(400).send(`
-            <html>
-              <head><title>Installation Failed</title></head>
-              <body>
-                <h1>Installation Failed</h1>
-                <p>Error: ${error}</p>
-                <p><a href="/">Try again</a></p>
-              </body>
-            </html>
-          `);
+      // Install endpoint
+      this.app.get('/slack/install', (req, res) => {
+        try {
+          const installUrl = this.oauthController.getInstallUrl();
+          console.log('🔗 Redirecting to install URL');
+          res.redirect(installUrl);
+        } catch (error) {
+          console.error('❌ Install redirect failed:', error);
+          res.status(500).send('Install redirect failed');
         }
-    
-        if (!code) {
-          return res.status(400).send(`
-            <html>
-              <body>
-                <h1>Installation Failed</h1>
-                <p>Missing authorization code</p>
-                <p><a href="/">Try again</a></p>
-              </body>
-            </html>
-          `);
-        }
-    
-        // Exchange code for tokens
-        const result = await this.slackApp.client.oauth.v2.access({
-          client_id: slackConfig.clientId,
-          client_secret: slackConfig.clientSecret,
-          code: code as string,
-          redirect_uri: slackConfig.redirectUri
-        });
-    
-        if (!result.ok) {
-          throw new Error(`OAuth exchange failed: ${result.error}`);
-        }
-    
-        console.log('OAuth success:', {
-          team_id: result.team?.id,
-          user_id: result.authed_user?.id,
-          bot_user_id: result.bot_user_id
-        });
-    
-        // Send success response
+      });
+
+      // Landing page
+      this.app.get('/', (req, res) => {
         res.send(`
           <html>
             <head>
-              <title>Installation Successful</title>
+              <title>Smart Notifications - Debug Mode</title>
               <style>
-                body { 
-                  font-family: Arial, sans-serif; 
-                  text-align: center; 
-                  padding: 50px;
-                  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                  color: white;
-                }
-                .container { 
-                  max-width: 500px;
-                  margin: 0 auto;
-                  background: rgba(255,255,255,0.1);
-                  padding: 40px;
-                  border-radius: 20px;
-                }
+                body { font-family: Arial; padding: 20px; max-width: 800px; margin: 0 auto; }
+                .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+                .success { background: #d4edda; color: #155724; }
+                .warning { background: #fff3cd; color: #856404; }
+                .error { background: #f8d7da; color: #721c24; }
+                .code { background: #f8f9fa; padding: 2px 4px; border-radius: 3px; font-family: monospace; }
               </style>
             </head>
             <body>
-              <div class="container">
-                <h1>🎉 Success!</h1>
-                <p>Smart Notifications has been installed!</p>
-                <p>Go to your Slack app and click on Smart Notifications in the sidebar.</p>
-                <a href="slack://app" style="color: white;">Open Slack</a>
-              </div>
-            </body>
-          </html>
-        `);
-    
-      } catch (error) {
-        console.error('OAuth callback error:', error);
-        res.status(500).send(`
-          <html>
-            <body>
-              <h1>Installation Error</h1>
-              <p>Something went wrong: ${error instanceof Error ? error.message : 'Unknown error'}</p>
-              <p><a href="/">Retry Installation</a></p>
-            </body>
-          </html>
-        `);
-      }
-    });
-
-    // Slack OAuth install endpoint
-    this.app.get('/slack/install', (req, res) => {
-      const installUrl = this.oauthController.getInstallUrl();
-      res.redirect(installUrl);
-    });
-
-    // Landing page
-    this.app.get('/', (req, res) => {
-      res.send(`
-        <html>
-          <head>
-            <title>Smart Notifications for Slack</title>
-            <style>
-              body { 
-                font-family: Arial, sans-serif; 
-                text-align: center; 
-                padding: 50px;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-              }
-              .container { 
-                max-width: 600px; 
-                margin: 0 auto;
-                background: rgba(255,255,255,0.1);
-                padding: 40px;
-                border-radius: 20px;
-              }
-              .install-btn {
-                display: inline-block;
-                padding: 15px 30px;
-                background: #4A154B;
-                color: white;
-                text-decoration: none;
-                border-radius: 10px;
-                font-weight: bold;
-                margin: 20px 0;
-              }
-            </style>
-          </head>
-          <body>
-            <div class="container">
-              <h1>🧠 Smart Notifications</h1>
-              <p>AI-powered notification filtering for Slack</p>
-              <a href="/slack/install" class="install-btn">Add to Slack</a>
-              <p><small>Server is running! ✅</small></p>
-            </div>
-          </body>
-        </html>
-      `);
-    });
-
-    this.app.post('/test-ai', express.json(), async (req, res) => {
-      try {
-        const { message } = req.body;
-        
-        if (!message) {
-          return res.status(400).json({ error: 'Message is required' });
-        }
-    
-        console.log(`🧪 Testing AI classification for: "${message}"`);
-        
-        // Create a simple test using your AI service
-        const aiService = new (await import('./services/AIBackendService')).AIBackendService();
-        
-        const result = await aiService.testClassifyMessage(
-          message,
-          'test-user',
-          'test-channel'
-        );
-    
-        console.log('🎯 AI Test Result:', result);
-    
-        res.json({
-          success: true,
-          input: message,
-          result: result,
-          explanation: {
-            decision: result.should_notify ? 'WOULD NOTIFY' : 'WOULD FILTER',
-            confidence: `${result.confidence}%`,
-            category: result.category,
-            reasoning: result.reasoning
-          }
-        });
-    
-      } catch (error) {
-        console.error('❌ AI test failed:', error);
-        res.status(500).json({
-          success: false,
-          error: error instanceof Error ? error.message : 'Unknown error'
-        });
-      }
-    });
-    
-    // Add some quick test buttons
-    this.app.get('/test-ai-ui', (req, res) => {
-      res.send(`
-        <html>
-          <head>
-            <title>AI Classification Test</title>
-            <style>
-              body { font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; }
-              .test-box { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
-              button { padding: 10px 15px; margin: 5px; background: #4A154B; color: white; border: none; border-radius: 5px; cursor: pointer; }
-              button:hover { background: #611f69; }
-              #result { margin-top: 20px; padding: 15px; background: #f5f5f5; border-radius: 5px; }
-              textarea { width: 100%; height: 100px; padding: 10px; border: 1px solid #ddd; border-radius: 5px; }
-            </style>
-          </head>
-          <body>
-            <h1>🧠 AI Classification Test</h1>
-            
-            <div class="test-box">
-              <h3>Test Custom Message</h3>
-              <textarea id="customMessage" placeholder="Enter your test message here..."></textarea>
-              <br><button onclick="testCustom()">Test Classification</button>
-            </div>
-            
-            <div class="test-box">
-              <h3>Quick Tests</h3>
-              <button onclick="testMessage('Help! The deployment pipeline is broken and blocking releases!')">🚨 Urgent Test</button>
-              <button onclick="testMessage('Anyone want to grab coffee?')">☕ Social Test</button>
-              <button onclick="testMessage('Meeting reminder: standup at 10am tomorrow')">📅 Meeting Test</button>
-              <button onclick="testMessage('The new feature is ready for review')">💼 Work Test</button>
-            </div>
-            
-            <div id="result"></div>
-            
-            <script>
-              async function testMessage(message) {
-                const resultDiv = document.getElementById('result');
-                resultDiv.innerHTML = '<p>🤖 Testing classification...</p>';
-                
-                try {
-                  const response = await fetch('/test-ai', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message })
-                  });
-                  
-                  const data = await response.json();
-                  
-                  if (data.success) {
-                    const emoji = data.result.should_notify ? '✅' : '❌';
-                    resultDiv.innerHTML = \`
-                      <h3>\${emoji} Classification Result</h3>
-                      <p><strong>Input:</strong> "\${data.input}"</p>
-                      <p><strong>Decision:</strong> \${data.explanation.decision}</p>
-                      <p><strong>Category:</strong> \${data.explanation.category}</p>
-                      <p><strong>Confidence:</strong> \${data.explanation.confidence}</p>
-                      <p><strong>Reasoning:</strong> \${data.explanation.reasoning}</p>
-                      <hr>
-                      <details>
-                        <summary>Full Result</summary>
-                        <pre>\${JSON.stringify(data.result, null, 2)}</pre>
-                      </details>
-                    \`;
-                  } else {
-                    resultDiv.innerHTML = \`<p style="color: red;">❌ Error: \${data.error}</p>\`;
-                  }
-                } catch (error) {
-                  resultDiv.innerHTML = \`<p style="color: red;">❌ Network Error: \${error.message}</p>\`;
-                }
-              }
+              <h1>🧠 Smart Notifications - Debug Mode</h1>
               
-              function testCustom() {
-                const message = document.getElementById('customMessage').value;
-                if (message.trim()) {
-                  testMessage(message);
-                } else {
-                  alert('Please enter a message to test');
-                }
-              }
-            </script>
-          </body>
-        </html>
-      `);
-    });
-    
-    console.log('🧪 AI test endpoints added: /test-ai and /test-ai-ui');
+              <div class="status ${slackConfig.botToken ? 'success' : 'error'}">
+                <strong>Bot Token:</strong> ${slackConfig.botToken ? '✅ Configured' : '❌ Missing'}
+              </div>
+              
+              <div class="status ${slackConfig.signingSecret ? 'success' : 'error'}">
+                <strong>Signing Secret:</strong> ${slackConfig.signingSecret ? '✅ Configured' : '❌ Missing'}
+              </div>
 
-    console.log('✅ Routes configured');
+              <h3>🧪 Test Server Connectivity</h3>
+              <p>Test if this server is working:</p>
+              <ul>
+                <li><a href="/ping" target="_blank">Ping Test</a></li>
+                <li><a href="/health" target="_blank">Health Check</a></li>
+              </ul>
+
+              <h3>🔗 For Slack App Configuration</h3>
+              <p><strong>Events URL:</strong> <span class="code">https://your-ngrok-url.ngrok.io/slack/events</span></p>
+              <p><strong>OAuth Redirect URL:</strong> <span class="code">https://your-ngrok-url.ngrok.io/slack/oauth/callback</span></p>
+
+              <h3>🚀 Install & Test</h3>
+              <p><a href="/slack/install" style="display: inline-block; padding: 15px 30px; background: #4A154B; color: white; text-decoration: none; border-radius: 5px;">Install App to Slack</a></p>
+              
+              <h3>📝 Testing Steps</h3>
+              <ol>
+                <li>Make sure you have ngrok running: <span class="code">ngrok http 3000</span></li>
+                <li>Update your Slack app's Event Subscriptions URL</li>
+                <li>Install the app using the button above</li>
+                <li>In any Slack channel, type: <span class="code">test bot</span></li>
+                <li>Check this terminal for logs</li>
+              </ol>
+            </body>
+          </html>
+        `);
+      });
+
+      console.log('✅ Main routes set up');
+    } catch (error) {
+      console.error('❌ Failed to setup main routes:', error);
+      throw error;
+    }
   }
 
   private setupErrorHandling(): void {
+    console.log('🔧 Setting up error handling...');
+    
     // Global error handler
     this.app.use((error: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
-      console.error('Unhandled error:', error);
-      
-      res.status(500).json({
-        success: false,
-        error: {
-          message: appConfig.server.env === 'production' ? 'Internal server error' : error.message,
-          timestamp: new Date().toISOString()
-        }
+      console.error('❌ Express error:', {
+        message: error.message,
+        stack: error.stack,
+        url: req.url,
+        method: req.method
+      });
+      res.status(500).json({ 
+        success: false, 
+        error: error.message,
+        path: req.path
       });
     });
 
     // 404 handler
     this.app.use((req: express.Request, res: express.Response) => {
-      res.status(404).json({
-        success: false,
-        error: {
-          message: 'Endpoint not found',
-          path: req.path,
-          timestamp: new Date().toISOString()
-        }
+      console.log('❌ 404 Not Found:', req.path);
+      res.status(404).json({ 
+        success: false, 
+        error: 'Endpoint not found', 
+        path: req.path,
+        availableEndpoints: [
+          'GET /',
+          'GET /ping', 
+          'GET /health',
+          'POST /test-slack-connection',
+          'GET /slack/install',
+          'GET /slack/oauth/callback',
+          'POST /slack/events'
+        ]
       });
     });
 
@@ -429,54 +446,45 @@ class SmartNotificationsApp {
 
   public async start(): Promise<void> {
     try {
-      // Use the receiver's start method instead of creating our own server
+      console.log('🚀 Starting server...');
       this.server = await this.expressReceiver.start(appConfig.server.port);
       
       console.log(`
-🚀 Smart Notifications Slack App started successfully!
+🎉 SMART NOTIFICATIONS STARTED SUCCESSFULLY!
 
-🌐 Server: http://${appConfig.server.host}:${appConfig.server.port}
-🔧 Environment: ${appConfig.server.env}
-❤️ Health Check: http://${appConfig.server.host}:${appConfig.server.port}/health
+🌐 Server: http://localhost:${appConfig.server.port}
+🧪 Test connectivity: curl http://localhost:${appConfig.server.port}/ping
+🔍 Manual test: curl -X POST http://localhost:${appConfig.server.port}/test-slack-connection
 
-📦 Slack App URLs:
-  Install: http://${appConfig.server.host}:${appConfig.server.port}/slack/install
-  Events: http://${appConfig.server.host}:${appConfig.server.port}/slack/events
+📱 For Slack Integration:
+1. Run: ngrok http ${appConfig.server.port}
+2. Update Slack app Event Subscriptions URL to: https://YOUR-NGROK-URL/slack/events
+3. Install: http://localhost:${appConfig.server.port}/slack/install
 
-Ready to filter some notifications! 🎯
+✅ Ready for testing!
       `);
 
-      // Graceful shutdown
       process.on('SIGTERM', () => this.shutdown());
       process.on('SIGINT', () => this.shutdown());
 
     } catch (error) {
-      console.error('Failed to start server:', error);
+      console.error('❌ Failed to start server:', error);
       process.exit(1);
     }
   }
 
   private async shutdown(): Promise<void> {
-    console.log('Shutting down gracefully...');
-    
+    console.log('🛑 Shutting down gracefully...');
     if (this.server) {
       await this.expressReceiver.stop();
-      console.log('Server closed');
+      console.log('✅ Server stopped');
       process.exit(0);
     }
   }
 
-  // Expose the Slack app for use by other parts of the application
-  public getSlackApp(): App {
-    return this.slackApp;
-  }
-
-  // Expose the Express app for additional route mounting
-  public getExpressApp(): express.Application {
-    return this.app;
-  }
-
-  // Expose controllers for testing or additional configuration
+  // Expose methods for external use
+  public getSlackApp(): App { return this.slackApp; }
+  public getExpressApp(): express.Application { return this.app; }
   public getControllers() {
     return {
       oauth: this.oauthController,
@@ -488,6 +496,9 @@ Ready to filter some notifications! 🎯
 
 // Start the application
 const smartNotificationsApp = new SmartNotificationsApp();
-smartNotificationsApp.start().catch(console.error);
+smartNotificationsApp.start().catch((error) => {
+  console.error('❌ Failed to start application:', error);
+  process.exit(1);
+});
 
 export default smartNotificationsApp;
