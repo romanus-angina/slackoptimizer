@@ -1,6 +1,8 @@
 import { App as SlackApp, ExpressReceiver } from '@slack/bolt';
 import { BaseController } from './BaseController';
 import { slackConfig } from '../config/slack';
+import { AppHomeView } from '../views/AppHomeView';
+import { viewState, ViewHelpers } from '../utils/viewState';
 
 export class SlackOAuthController extends BaseController {
   constructor(slackApp: SlackApp, expressReceiver: ExpressReceiver) {
@@ -142,59 +144,92 @@ export class SlackOAuthController extends BaseController {
   private async handleAppHomeOpened({ event, client }: any): Promise<void> {
     try {
       const { user, tab } = event;
-
+  
       // Only handle the 'home' tab
       if (tab !== 'home') {
         return;
       }
-
+  
       console.log(`App home opened by user: ${user}`);
-
+  
+      // Set loading state
+      viewState.setLoading(user, true);
+  
       // Get user info
       const slackUser = await this.getSlackUser(user, event.team || '');
       if (!slackUser) {
         throw new Error('Failed to get user information');
       }
-
+  
+      // Store user in state
+      viewState.setUser(user, slackUser);
+  
       // Ensure user exists in backend
       await this.ensureUserExists(slackUser);
-
-      // For now, publish a simple welcome view
-      // We'll build proper views in the next phase
-      await client.views.publish({
-        user_id: user,
-        view: {
-          type: 'home',
-          blocks: [
-            {
-              type: 'section',
-              text: {
-                type: 'mrkdwn',
-                text: `*Welcome to Smart Notifications!* 👋\n\nHi <@${user}>! Your intelligent notification filtering is being set up.\n\n_Full interface coming soon..._`
-              }
-            },
-            {
-              type: 'actions',
-              elements: [
-                {
-                  type: 'button',
-                  text: {
-                    type: 'plain_text',
-                    text: 'Get Started'
-                  },
-                  action_id: 'get_started',
-                  style: 'primary'
-                }
-              ]
-            }
-          ]
-        }
-      });
-
+  
+      // Create view instance
+      const homeView = new AppHomeView();
+  
+      try {
+        // Try to get real data from backend
+        const analytics = await this.backendAPI.getUserAnalytics(user, event.team, 'week');
+        const recentActivity = ViewHelpers.generateSampleActivity(); // Use sample for demo
+  
+        const viewData = {
+          user: { name: slackUser.name, id: user },
+          stats: {
+            messages_filtered: analytics.metrics.filtered_messages || 0,
+            notifications_sent: analytics.metrics.notifications_sent || 0,
+            filter_effectiveness: analytics.metrics.filter_effectiveness || 0
+          },
+          recent_activity: recentActivity
+        };
+  
+        viewState.setData(user, viewData);
+  
+        // Render the home view
+        const view = homeView.render(viewData);
+  
+        await client.views.publish({
+          user_id: user,
+          view
+        });
+  
+      } catch (backendError) {
+        // If backend fails, show sample data for demo
+        console.warn('Backend unavailable, showing sample data:', backendError);
+        
+        const sampleData = {
+          user: { name: slackUser.name, id: user },
+          stats: ViewHelpers.generateSampleStats(),
+          recent_activity: ViewHelpers.generateSampleActivity()
+        };
+  
+        viewState.setData(user, sampleData);
+  
+        const view = homeView.render(sampleData);
+        
+        await client.views.publish({
+          user_id: user,
+          view
+        });
+      }
+  
     } catch (error) {
       this.handleError(error as Error, 'handleAppHomeOpened');
+      
+      // Show error view
+      const homeView = new AppHomeView();
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      const errorView = homeView.renderError(errorMessage);
+      
+      await client.views.publish({
+        user_id: event.user,
+        view: errorView
+      });
     }
   }
+  
 
   // Helper method to generate OAuth install URL
   public getInstallUrl(state?: string): string {

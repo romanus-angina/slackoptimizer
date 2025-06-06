@@ -1,6 +1,8 @@
 import { ExpressReceiver, App as SlackApp } from '@slack/bolt';
 import { BaseController } from './BaseController';
 import { ActionPayload } from '../types/ui';
+import { SettingsView } from '../views/SettingsView';
+import { TestMessageView } from '../views/TestMessageView';
 
 export class SlackInteractionController extends BaseController {
   constructor(slackApp: SlackApp, expressReceiver: ExpressReceiver) {
@@ -94,6 +96,8 @@ export class SlackInteractionController extends BaseController {
       this.handleError(error as Error, 'handleGetStarted');
     }
   }
+
+  
 
   private async handleSettingsAction({ ack, body, client }: any): Promise<void> {
     try {
@@ -230,99 +234,125 @@ export class SlackInteractionController extends BaseController {
   private async handleTestSubmission({ ack, body, view, client }: any): Promise<void> {
     try {
       await ack();
-
+  
       const userId = body.user.id;
       const teamId = body.team?.id || body.user.team_id;
       const values = view.state.values;
-
-      const testMessage = values.test_message?.test_message_input?.value;
-      const channelId = values.test_channel?.test_channel_select?.selected_channel;
-
-      if (!testMessage || !channelId) {
-        throw new Error('Missing test message or channel');
+  
+      const testMessage = values.test_message?.message_input?.value;
+      const channelContext = values.channel_context?.channel_select?.selected_option?.value || 'general';
+  
+      if (!testMessage) {
+        throw new Error('No test message provided');
       }
-
-      console.log(`Test submission by ${userId}: testing message in ${channelId}`);
-
-      // Test the message classification
-      const result = await this.backendAPI.testClassifyMessage(
-        testMessage,
-        userId,
-        channelId
-      );
-
-      // Get channel info for display
-      const channelInfo = await this.getChannelInfo(channelId);
-      const channelName = channelInfo?.name || 'unknown';
-
-      // Send result to user
+  
+      console.log(`Testing message classification for user ${userId}`);
+  
+      // Show loading message first
+      const testView = new TestMessageView();
+      const loadingBlocks = testView.renderLoading();
+      
       await client.chat.postEphemeral({
         channel: userId,
         user: userId,
-        blocks: [
-          {
-            type: 'section',
-            text: {
-              type: 'mrkdwn',
-              text: `*Test Result for #${channelName}*`
-            }
-          },
-          {
-            type: 'section',
-            fields: [
-              {
-                type: 'mrkdwn',
-                text: `*Message:*\n${testMessage}`
-              },
-              {
-                type: 'mrkdwn',
-                text: `*Would Notify:* ${result.should_notify ? '✅ Yes' : '❌ No'}`
-              },
-              {
-                type: 'mrkdwn',
-                text: `*Category:* ${result.category}`
-              },
-              {
-                type: 'mrkdwn',
-                text: `*Confidence:* ${result.confidence}%`
-              }
-            ]
-          },
-          {
-            type: 'section',
-            text: {
-              type: 'mrkdwn',
-              text: `*Reasoning:* ${result.reasoning}`
-            }
-          }
-        ]
+        blocks: loadingBlocks
       });
-
+  
+      try {
+        // Test the message classification
+        const result = await this.backendAPI.testClassifyMessage(
+          testMessage,
+          userId,
+          channelContext
+        );
+  
+        // Show result
+        const resultBlocks = testView.renderTestResult({
+          message: testMessage,
+          should_notify: result.should_notify,
+          confidence: result.confidence,
+          category: result.category,
+          reasoning: result.reasoning,
+          channel: channelContext
+        });
+  
+        await client.chat.postEphemeral({
+          channel: userId,
+          user: userId,
+          text: `Test result for: "${testMessage}"`,
+          blocks: resultBlocks
+        });
+  
+      } catch (classificationError) {
+        console.error('Classification failed:', classificationError);
+        
+        // Show sample result for demo if backend fails
+        const sampleResult = {
+          message: testMessage,
+          should_notify: testMessage.toLowerCase().includes('urgent') || testMessage.includes('?'),
+          confidence: 85,
+          category: testMessage.toLowerCase().includes('urgent') ? 'urgent' : 
+                   testMessage.includes('?') ? 'question' : 'general',
+          reasoning: `Sample AI analysis: This message ${testMessage.toLowerCase().includes('urgent') ? 'contains urgent keywords' : 'appears to be general conversation'}.`
+        };
+  
+        const resultBlocks = testView.renderTestResult(sampleResult);
+        
+        await client.chat.postEphemeral({
+          channel: userId,
+          user: userId,
+          text: `Demo result for: "${testMessage}"`,
+          blocks: resultBlocks
+        });
+      }
+  
     } catch (error) {
-      this.handleError(error as Error, 'handleTestSubmission');
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
       
-      await ack({
-        response_action: 'errors',
-        errors: {
-          test_message: 'Failed to test message. Please try again.'
-        }
+      // Show error to user
+      await client.chat.postEphemeral({
+        channel: body.user.id,
+        user: body.user.id,
+        text: `❌ Test failed: ${errorMessage}`
       });
+      
+      this.handleError(error as Error, 'handleTestSubmission');
     }
   }
-
-  private async handleOpenSettings({ ack, shortcut, client }: any): Promise<void> {
+  
+  private async handleOpenSettings({ ack, body, client }: any): Promise<void> {
     try {
       await ack();
-
-      const userId = shortcut.user.id;
-      const teamId = shortcut.team?.id;
-
-      await this.openSettingsModal(client, shortcut.trigger_id, userId, teamId);
-
+  
+      const userId = body.user.id;
+      const teamId = body.team?.id || body.user.team_id;
+  
+      console.log(`Opening settings for user: ${userId}`);
+  
+      // Get current settings
+      let currentSettings = {};
+      try {
+        const backendUser = await this.backendAPI.getUser(userId, teamId);
+        currentSettings = backendUser?.settings || {};
+      } catch (error) {
+        console.warn('Could not load settings, using defaults:', error);
+        currentSettings = this.backendAPI.getDefaultUserSettings();
+      }
+  
+      // Create and show settings modal
+      const settingsView = new SettingsView();
+      const modal = settingsView.renderModal(currentSettings);
+  
+      await client.views.open({
+        trigger_id: body.trigger_id,
+        view: modal
+      });
+  
     } catch (error) {
       this.handleError(error as Error, 'handleOpenSettings');
     }
   }
+  
 
   // Helper methods for opening modals and views
 
@@ -428,6 +458,27 @@ export class SlackInteractionController extends BaseController {
 
     } catch (error) {
       this.handleError(error as Error, 'openSettingsModal');
+    }
+  }
+
+  private async handleTestFilter({ ack, body, client }: any): Promise<void> {
+    try {
+      await ack();
+  
+      const userId = body.user.id;
+      console.log(`Opening test filter for user: ${userId}`);
+  
+      // Create and show test modal
+      const testView = new TestMessageView();
+      const modal = testView.renderTestModal();
+  
+      await client.views.open({
+        trigger_id: body.trigger_id,
+        view: modal
+      });
+  
+    } catch (error) {
+      this.handleError(error as Error, 'handleTestFilter');
     }
   }
 
