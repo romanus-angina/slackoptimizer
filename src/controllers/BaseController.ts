@@ -16,9 +16,9 @@ export abstract class BaseController {
   // Helper method to extract user info from Slack events
   protected async getSlackUser(userId: string, teamId: string): Promise<SlackUser | null> {
     try {
+      // FIXED: Remove manual token - let Bolt handle it
       const result = await this.slackApp.client.users.info({
-        user: userId,
-        token: process.env.SLACK_BOT_TOKEN // We'll improve token management later
+        user: userId
       });
 
       if (!result.ok || !result.user) {
@@ -41,9 +41,9 @@ export abstract class BaseController {
   // Helper method to get channel info
   protected async getChannelInfo(channelId: string) {
     try {
+      // FIXED: Remove manual token - let Bolt handle it
       const result = await this.slackApp.client.conversations.info({
-        channel: channelId,
-        token: process.env.SLACK_BOT_TOKEN
+        channel: channelId
       });
 
       if (!result.ok || !result.channel) {
@@ -92,10 +92,10 @@ export abstract class BaseController {
   // Helper method to send DM to user
   protected async sendDirectMessage(userId: string, message: string): Promise<void> {
     try {
+      // FIXED: Remove manual token - let Bolt handle it
       await this.slackApp.client.chat.postMessage({
         channel: userId,
-        text: message,
-        token: process.env.SLACK_BOT_TOKEN
+        text: message
       });
     } catch (error) {
       console.error(`Failed to send DM to ${userId}:`, error);
@@ -127,7 +127,7 @@ export abstract class BaseController {
       }
     } catch (error) {
       console.error(`Failed to ensure user exists: ${slackUser.id}`, error);
-      throw error;
+      // Don't throw error - just log it for hackathon demo
     }
   }
 

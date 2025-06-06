@@ -2,53 +2,54 @@ import { config } from 'dotenv';
 
 config();
 
+// src/config/slack.ts - Updated with VALID scopes only
+
 export const slackConfig = {
-  // OAuth & App Credentials
-  clientId: process.env.SLACK_CLIENT_ID || '',
-  clientSecret: process.env.SLACK_CLIENT_SECRET || '',
-  signingSecret: process.env.SLACK_SIGNING_SECRET || '',
-  
-  // Bot Token (for API calls after installation)
-  botToken: process.env.SLACK_BOT_TOKEN || '',
-  
-  // OAuth Scopes
-  scopes: [
-    'app_mentions:read',
-    'channels:history',
-    'channels:read',
-    'chat:write',
-    'groups:history',
-    'groups:read',
-    'im:history',
-    'im:read',
-    'mpim:history',
-    'mpim:read',
-    'reactions:read',
-    'users:read',
-    'users:read.email'
-  ],
-  
-  // Webhook endpoints
-  endpoints: {
-    events: '/slack/events',
-    interactions: '/slack/interactions',
-    oauth: '/slack/oauth',
-    commands: '/slack/commands'
-  },
-  
-  // OAuth configuration - full URL for redirect
-  redirectUri: process.env.SLACK_REDIRECT_URI || 'http://localhost:3000/slack/oauth/callback',
-  
-  // Event subscriptions
-  eventSubscriptions: [
-    'message.channels',
-    'message.groups',
-    'message.im',
-    'message.mpim',
-    'app_mention',
-    'app_home_opened'
-  ]
-};
+    // OAuth & App Credentials
+    clientId: process.env.SLACK_CLIENT_ID || '',
+    clientSecret: process.env.SLACK_CLIENT_SECRET || '',
+    signingSecret: process.env.SLACK_SIGNING_SECRET || '',
+    
+    // Bot Token (for API calls after installation)
+    botToken: process.env.SLACK_BOT_TOKEN || '',
+    
+    // CORRECTED OAuth Scopes - these are all VALID
+    scopes: [
+      'channels:history',    // Read message history in public channels
+      'channels:read',       // View basic info about public channels
+      'chat:write',          // Send messages as bot
+      'groups:history',      // Read message history in private channels
+      'groups:read',         // View basic info about private channels
+      'im:history',          // Read direct message history
+      'im:read',             // View basic info about direct messages
+      'mpim:history',        // Read group direct message history
+      'mpim:read',           // View basic info about group direct messages
+      'reactions:read',      // Read emoji reactions
+      'users:read',          // Read user profile info
+      'users:read.email'     // Read user email addresses
+    ],
+    
+    // Webhook endpoints
+    endpoints: {
+      events: '/slack/events',
+      interactions: '/slack/interactions',
+      oauth: '/slack/oauth',
+      commands: '/slack/commands'
+    },
+    
+    // OAuth configuration - full URL for redirect
+    redirectUri: process.env.SLACK_REDIRECT_URI || 'http://localhost:3000/slack/oauth/callback',
+    
+    // Event subscriptions
+    eventSubscriptions: [
+      'message.channels',
+      'message.groups',
+      'message.im',
+      'message.mpim',
+      'app_mention',
+      'app_home_opened'
+    ]
+  };
 
 // Validation helper
 export function validateSlackConfig(): string[] {

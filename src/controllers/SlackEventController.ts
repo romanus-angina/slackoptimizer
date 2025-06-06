@@ -21,7 +21,7 @@ export class SlackEventController extends BaseController {
     this.slackApp.message(this.handleAllMessages.bind(this));
 
     // Handle App Home opened event
-    this.slackApp.event('app_home_opened', this.handleAppHomeOpened.bind(this));
+    // this.slackApp.event('app_home_opened', this.handleAppHomeOpened.bind(this));
 
     console.log('[SlackEventController] Event handlers registered');
   }
