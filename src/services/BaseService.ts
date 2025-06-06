@@ -88,11 +88,6 @@ export abstract class BaseService {
     throw lastError;
   }
 
-  // Utility method for delay
-  private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-
   // Helper methods for logging
   private logRequest(config: AxiosRequestConfig): void {
     console.log(`[${this.serviceName}] Request:`, {
@@ -130,7 +125,27 @@ export abstract class BaseService {
       return new Error(
         `${this.serviceName} API error: ${error.response.status} - ${error.response.data?.message || error.message}`
       );
+    } else if (error.request) {
+      // Request was made but no response received
+      return new Error(`${this.serviceName} network error: No response received`);
+    } else {
+      // Something else happened
+      return new Error(`${this.serviceName} error: ${error.message}`);
     }
-    return new Error(error.message);
+  }
+
+  // Utility method for delays
+  private delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  // Health check method that services can override
+  protected async healthCheck(): Promise<boolean> {
+    try {
+      await this.get('/health');
+      return true;
+    } catch {
+      return false;
+    }
   }
 }
