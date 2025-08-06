@@ -6,8 +6,8 @@ import { TestMessageView } from '../views/TestMessageView';
 import { AppHomeView } from '../views/AppHomeView';
 
 export class SlackInteractionController extends BaseController {
-  constructor(slackApp: SlackApp, expressReceiver: ExpressReceiver) {
-    super(slackApp, expressReceiver);
+  constructor(slackApp: SlackApp) {
+    super(slackApp);
   }
 
   register(): void {

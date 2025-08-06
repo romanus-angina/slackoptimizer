@@ -4,12 +4,10 @@ import { SlackUser } from '../types/slack';
 
 export abstract class BaseController {
   protected slackApp: SlackApp;
-  protected expressReceiver: ExpressReceiver;
   protected backendAPI: AIBackendService; // Real AI backend
 
-  constructor(slackApp: SlackApp, expressReceiver: ExpressReceiver) {
+  constructor(slackApp: SlackApp) {
     this.slackApp = slackApp;
-    this.expressReceiver = expressReceiver;
     this.backendAPI = new AIBackendService(); // Initialize real AI service
   }
 

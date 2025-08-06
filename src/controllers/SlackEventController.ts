@@ -8,8 +8,8 @@ import { AppHomeView } from '../views/AppHomeView';
 export class SlackEventController extends BaseController {
   protected backendAPI: BackendAPIService;
 
-  constructor(slackApp: SlackApp, expressReceiver: ExpressReceiver) {
-    super(slackApp, expressReceiver);
+  constructor(slackApp: SlackApp) {
+    super(slackApp);
     this.backendAPI = new BackendAPIService(); 
   }
 

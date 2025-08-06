@@ -5,8 +5,8 @@ import { AppHomeView } from '../views/AppHomeView';
 import { viewState, ViewHelpers } from '../utils/viewState';
 
 export class SlackOAuthController extends BaseController {
-  constructor(slackApp: SlackApp, expressReceiver: ExpressReceiver) {
-    super(slackApp, expressReceiver);
+  constructor(slackApp: SlackAppr) {
+    super(slackApp);
   }
 
   register(): void {
